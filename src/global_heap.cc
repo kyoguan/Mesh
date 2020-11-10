@@ -345,10 +345,10 @@ size_t GlobalHeap::meshSizeClassLocked(size_t sizeClass, MergeSetArray &mergeSet
 
   auto meshFound =
       function<bool(std::pair<MiniHeap *, MiniHeap *> &&)>([&](std::pair<MiniHeap *, MiniHeap *> &&miniheaps) {
-        if (miniheaps.first->isMeshingCandidate() && miniheaps.second->isMeshingCandidate()) {
-          mergeSets[mergeSetCount] = std::move(miniheaps);
-          mergeSetCount++;
-        }
+        d_assert(miniheaps.first->isMeshingCandidate());
+        d_assert(miniheaps.second->isMeshingCandidate());
+        mergeSets[mergeSetCount] = std::move(miniheaps);
+        mergeSetCount++;
         return mergeSetCount < kMaxMergeSets;
       });
 
@@ -454,7 +454,7 @@ void GlobalHeap::meshAllSizeClassesLocked() {
 
   size_t totalMeshCount = 0;
 
-  for (size_t sizeClass = 0; sizeClass < kNumBins; sizeClass++) {
+  for (size_t sizeClass = 0; sizeClass < kNumBins && SizeMap::ByteSizeForClass(sizeClass) < kPageSize; sizeClass++) {
     totalMeshCount += meshSizeClassLocked(sizeClass, MergeSets, Left, Right);
   }
 
@@ -503,7 +503,8 @@ void ATTRIBUTE_NEVER_INLINE halfSplit(MWC &prng, MiniHeapListEntry *miniheaps, S
     auto mh = GetMiniHeap(mhId);
     mhId = mh->getFreelist()->next();
 
-    if (!mh->isMeshingCandidate() || (mh->fullness() >= kOccupancyCutoff)) {
+    d_assert(mh->isMeshingCandidate());
+    if (mh->fullness() >= kOccupancyCutoff) {
       continue;
     }
 
