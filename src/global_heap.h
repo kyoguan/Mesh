@@ -542,6 +542,9 @@ public:
     return bucket;
   }
 
+  void dumpMiniHeaps(size_t sizeClass, const MiniHeapListEntry *miniheaps, int level);
+  void dumpList(int level);
+
 private:
   // check for meshes in all size classes -- must be called LOCKED
   void meshAllSizeClassesLocked();

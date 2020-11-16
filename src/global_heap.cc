@@ -492,6 +492,70 @@ void GlobalHeap::dumpStats(int level, bool beDetailed) const {
   }
 }
 
+void GlobalHeap::dumpMiniHeaps(size_t sizeClass, const MiniHeapListEntry *miniheaps, int level) {
+  size_t total = 0;
+  size_t hasMeshed = 0;
+  size_t totalMesh = 0;
+  size_t maxMeshes = 0;
+  size_t release = 0;
+  constexpr size_t kCap = 11;
+  size_t fullness[kCap] = {0};
+
+
+  MiniHeapID mhId = miniheaps->next();
+  while (mhId != list::Head) {
+    auto mh = GetMiniHeap(mhId);
+    mhId = mh->getFreelist()->next();
+    ++total;
+
+    ++fullness[mh->inUseCount() * 10 / mh->maxCount()];
+    auto meshCount = mh->meshCount();
+    if (meshCount > 1) {
+      ++hasMeshed;
+      totalMesh += meshCount;
+      if (meshCount > maxMeshes) {
+        maxMeshes = meshCount;
+      }
+      release += unboundMeshSlowly(mh);
+    }
+  }
+  debug(
+      "MeshInfo  -- class:%-2zu, MHTotalCount:%zu, MHHasMeshedCount:%zu(%.2lf%%), MHTotalMeshedCount:%zu, "
+      "MaxMeshes:%zu, AvgMeshes:%.2lf, release:%zu",
+      sizeClass, total, hasMeshed, hasMeshed * 100.0 / std::max(total, 1ul), totalMesh, maxMeshes,
+      double(totalMesh) / std::max(hasMeshed, 1ul), release);
+  for (size_t i = 0; i < kCap; ++i) {
+    debug("MeshInfo  -- class:%-2zu, fullness %3zu%% - %3zu%% %6zu", sizeClass, i * 10,
+          (i < kCap - 1 ? i * 10 + 9 : i * 10), fullness[i]);
+  }
+  debug("MeshInfo ");
+}
+
+void GlobalHeap::dumpList(int level) {
+  for (size_t sizeClass = 0; sizeClass < kNumBins; ++sizeClass) {
+    {
+      lock_guard<mutex> lock(_miniheapLock);
+      const auto &freelist = _partialFreelist[sizeClass];
+      if (freelist.second) {
+        debug("MeshInfo ++++++++++ partial class:%-2zu, length:%-6zu", sizeClass, freelist.second);
+        if (level > 0) {
+          dumpMiniHeaps(sizeClass, &freelist.first, level);
+        }
+      }
+    }
+    {
+      lock_guard<mutex> lock(_miniheapLock);
+      const auto &freelist = _fullList[sizeClass];
+      if (freelist.second) {
+        debug("MeshInfo +++++++++++++ full class:%-2zu, length:%-6zu", sizeClass, freelist.second);
+        if (level > 0) {
+          dumpMiniHeaps(sizeClass, &freelist.first, level);
+        }
+      }
+    }
+  }
+}
+
 namespace method {
 
 void ATTRIBUTE_NEVER_INLINE halfSplit(MWC &prng, MiniHeapListEntry *miniheaps, SplitArray &left, size_t &leftSize,

@@ -211,6 +211,8 @@ void Runtime::createSignalFd() {
   sigset_t mask;
   sigemptyset(&mask);
   sigaddset(&mask, SIGDUMP);
+  sigaddset(&mask, SIGUSR1);
+  sigaddset(&mask, SIGUSR2);
 
   /* Block signals so that they aren't handled
      according to their default dispositions */
@@ -265,13 +267,18 @@ void *Runtime::bgThread(void *arg) {
       }
     }
 
-    if (static_cast<int>(siginfo.ssi_signo) == SIGDUMP) {
+    int signo = static_cast<int>(siginfo.ssi_signo);
+    if (signo == SIGDUMP) {
       // debug("libmesh: background thread received SIGDUMP, starting dump\n");
       debug(">>>>>>>>>>\n");
       rt.heap().dumpStrings();
       // debug("<<<<<<<<<<\n");
 
       // debug("<<<<<<<<<<\n");
+    } else if (signo == SIGUSR1) {
+      rt.heap().dumpList(0);
+    } else if (signo == SIGUSR2) {
+      rt.heap().dumpList(1);
     } else {
       auto _ __attribute__((unused)) =
           write(STDERR_FILENO, "Read unexpected signal\n", strlen("Read unexpected signal\n"));
