@@ -465,9 +465,16 @@ void *Runtime::bgFreePhysThread(void *arg) {
     if (idle_count > 100) {
       std::this_thread::sleep_for(1ms);
     }
+    else {
+      std::this_thread::yield();
+    }
   }
 
   return nullptr;
+}
+
+void Runtime::freeInFrontGround() {
+  jobFreeCmd();
 }
 
 void Runtime::lock() {

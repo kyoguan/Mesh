@@ -91,11 +91,16 @@ public:
   }
 
   bool sendFreeCmd(internal::FreeCmd *fComand) {
-    return _pagesFreeCmdBuffer->try_push(fComand);
+    bool isOk =  _pagesFreeCmdBuffer->try_push(fComand);
+
+    if(!_freeThreadRunning) {
+      freeInFrontGround();
+    }
+
+    return isOk;
   }
 
-  void selfFlush() {
-  }
+  void freeInFrontGround();
 
   internal::FreeCmd *getReturnCmdFromBg() {
     return _pagesReturnCmdBuffer->pop();

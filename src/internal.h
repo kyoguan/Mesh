@@ -287,9 +287,9 @@ inline void *MaskToPage(const void *ptr) {
 int copyFile(int dstFd, int srcFd, off_t off, size_t sz);
 
 // for mesh-internal data structures, like heap metadata
-class Heap : public ExactlyOneHeap<LockedHeap<PosixLockType, PartitionedHeap>> {
+class Heap : public ExactlyOneHeap<LockedHeap<SpinLockType, PartitionedHeap>> {
 private:
-  typedef ExactlyOneHeap<LockedHeap<PosixLockType, PartitionedHeap>> SuperHeap;
+  typedef ExactlyOneHeap<LockedHeap<SpinLockType, PartitionedHeap>> SuperHeap;
 
 public:
   Heap() : SuperHeap() {
