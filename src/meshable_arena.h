@@ -74,8 +74,8 @@ public:
     for (size_t i = 0; i < span.length; i++) {
 #ifndef NDEBUG
       d_assert(!_mhIndex[span.offset + i].load(std::memory_order_acquire).hasValue());
-      // auto mh = reinterpret_cast<MiniHeap *>(miniheapForArenaOffset(span.offset + i));
-      // mh->dumpDebug();
+// auto mh = reinterpret_cast<MiniHeap *>(miniheapForArenaOffset(span.offset + i));
+// mh->dumpDebug();
 #endif
       setIndex(span.offset + i, id);
     }

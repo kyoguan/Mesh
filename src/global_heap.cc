@@ -74,23 +74,35 @@ void GlobalHeap::freeFor(MiniHeap *mh, void *ptr, size_t startEpoch) {
 
   d_assert(mh->maxCount() > 1);
 
-  auto freelistId = mh->freelistId();
-  auto isAttached = mh->isAttached();
-  auto sizeClass = mh->sizeClass();
-
   // try to avoid storing to this cacheline; the branch is worth it to avoid
   // multi-threaded contention
   if (_lastMeshEffective.load(std::memory_order::memory_order_acquire) == 0) {
     _lastMeshEffective.store(1, std::memory_order::memory_order_release);
   }
+
+  const auto off = mh->getOff(arenaBegin(), ptr);
+  auto sizeClass = mh->sizeClass();
+
+  if (mh->isMeshed()) {
+    auto leader = mh->meshedLeader();
+    d_assert(leader != nullptr);
+    if (mh->meshedFree(off)) {
+      leader->setPartialFree();
+    }
+    mh = leader;
+  }
+
+  auto freelistId = mh->freelistId();
+  auto isAttached = mh->isAttached();
   // read inUseCount before calling free to avoid stalling after the
   // LOCK CMPXCHG in mh->free
   auto remaining = mh->inUseCount() - 1;
+  auto createEpoch = mh->createEpoch();
 
   // here can't call mh->free(arenaBegin(), ptr), because in consume takeBitmap always clear the bitmap,
   // if clearIfNotFree after takeBitmap
   // it alwasy return false, but in this case, you need to free again.
-  auto wasSet = mh->clearIfNotFree(arenaBegin(), ptr);
+  auto wasSet = mh->clearIfNotFree(off);
 
   bool shouldMesh = false;
 
@@ -102,32 +114,29 @@ void GlobalHeap::freeFor(MiniHeap *mh, void *ptr, size_t startEpoch) {
     // and now.  synchronize to avoid races
     lock_guard<mutex> lock(_miniheapLock);
 
-    const auto origMh = mh;
-    mh = miniheapForWithEpoch(ptr, startEpoch);
-    if (unlikely(mh == nullptr)) {
+    if (mh->createEpoch() != createEpoch) {
+      return;
+    }
+    auto origMh = mh;
+    mh = mh->meshedLeader();
+    if (mh == nullptr) {
       return;
     }
 
     if (unlikely(mh != origMh)) {
       hard_assert(!mh->isMeshed());
-      if (mh->isRelated(origMh) && !wasSet) {
+      if (origMh->meshedFree(off)) {
+        mh->setPartialFree();
+      }
+      if (!wasSet) {
         // we have confirmation that we raced with meshing, so free the pointer
         // on the new miniheap
         d_assert(sizeClass == mh->sizeClass());
-        mh->free(arenaBegin(), ptr);
+        mh->freeOff(off);
       } else {
         // our MiniHeap is unrelated to whatever is here in memory now - get out of here.
         return;
       }
-    }
-
-    if (unlikely(mh->sizeClass() != sizeClass || mh->isLargeAlloc())) {
-      // TODO: This papers over a bug where the miniheap was freed
-      //  + reused out from under us while we were waiting for the mh lock.
-      //  It doesn't eliminate the problem (which should be solved
-      //  by storing the 'created epoch' on the MiniHeap), but it should
-      //  further reduce its probability
-      return;
     }
 
     remaining = mh->inUseCount();
@@ -151,56 +160,7 @@ void GlobalHeap::freeFor(MiniHeap *mh, void *ptr, size_t startEpoch) {
     if (!isAttached && (remaining == 0 || freelistId == list::Full)) {
       lock_guard<mutex> lock(_miniheapLock);
 
-      // there are 2 ways we could have raced with meshing:
-      //
-      // 1. when writing to the MiniHeap's bitmap (which we check for
-      //    above with the !_meshEpoch.isSame(current)).  this is what
-      //    the outer if statement here takes care of.
-      //
-      // 2. this thread losing the race with acquiring _miniheapLock
-      //    (what we care about here).  for thi case, we know a) our
-      //    write to the MiniHeap's bitmap succeeded (or we would be
-      //    in the other side of the outer if statement), and b) our
-      //    MiniHeap could have been freed from under us while we were
-      //    waiting for this lock (if e.g. remaining == 0, a mesh
-      //    happened on another thread, and the other thread notices
-      //    this MiniHeap is empty (b.c. an empty MiniHeap meshes with
-      //    every other MiniHeap).  We need to be careful here.
-
-      const auto origMh = mh;
-      // we have to reload the miniheap here because of the
-      // just-described possible race
-      mh = miniheapForWithEpoch(ptr, startEpoch);
-
-      // if the MiniHeap associated with the ptr we freed has changed,
-      // there are a few possibilities.
-      if (unlikely(mh != origMh)) {
-        // another thread took care of freeing this MiniHeap for us,
-        // super!  nothing else to do.
-        if (mh == nullptr) {
-          return;
-        }
-
-        // check to make sure the new MiniHeap is related (via a
-        // meshing relationship) to the one we had before grabbing the
-        // lock.
-        if (!mh->isRelated(origMh)) {
-          // the original miniheap was freed and a new (unrelated)
-          // Miniheap allocated for the address space.  nothing else
-          // for us to do.
-          return;
-        } else {
-          // TODO: we should really store 'created epoch' on mh and
-          // check those are the same here, too.
-        }
-      }
-
-      if (unlikely(mh->sizeClass() != sizeClass || mh->isLargeAlloc())) {
-        // TODO: This papers over a bug where the miniheap was freed
-        //  + reused out from under us while we were waiting for the mh lock.
-        //  It doesn't eliminate the problem (which should be solved
-        //  by storing the 'created epoch' on the MiniHeap), but it should
-        //  further reduce its probability
+      if (mh->createEpoch() != createEpoch) {
         return;
       }
 
@@ -282,6 +242,8 @@ void GlobalHeap::meshLocked(MiniHeap *dst, MiniHeap *&src, internal::vector<Span
   // mesh::debug("mesh dst:%p <- src:%p\n", dst, src);
   // dst->dumpDebug();
   // src->dumpDebug();
+  untrackMiniheapLocked(src);
+
   const size_t dstSpanSize = dst->spanSize();
   const auto dstSpanStart = reinterpret_cast<void *>(dst->getSpanStart(arenaBegin()));
 
@@ -294,10 +256,15 @@ void GlobalHeap::meshLocked(MiniHeap *dst, MiniHeap *&src, internal::vector<Span
 
   // does the copying of objects and updating of span metadata
   dst->consume(arenaBegin(), src);
-  d_assert(src->isMeshed());
 
-  src->forEachMeshed([&](const MiniHeap *mh) {
-    d_assert(mh->isMeshed());
+  const MiniHeapID dstID = miniheapIDFor(dst);
+  src->forEachMeshed([&](MiniHeap *mh) {
+    if (mh == src) {
+      mh->setMeshed(dstID);
+    } else {
+      d_assert(mh->isMeshed());
+      mh->setMeshedLeader(dstID);
+    }
     const auto srcSpan = reinterpret_cast<void *>(mh->getSpanStart(arenaBegin()));
     // frees physical memory + re-marks srcSpans as read/write
     Super::finalizeMesh(dstSpanStart, srcSpan, dstSpanSize);
@@ -310,25 +277,37 @@ void GlobalHeap::meshLocked(MiniHeap *dst, MiniHeap *&src, internal::vector<Span
   // make sure we adjust what bin the destination is in -- it might
   // now be full and not a candidate for meshing
   postFreeLocked(dst, dst->sizeClass(), dst->inUseCount());
-  untrackMiniheapLocked(src);
 }
 
-bool GlobalHeap::unboundMeshSlowly(MiniHeap *mh) {
-  MiniHeap *meshed = mh->NextMeshedMiniHeap();
-  d_assert(meshed);
+size_t GlobalHeap::unboundMeshSlowly(MiniHeap *mh) {
+  d_assert(mh->hasMeshed());
+  const auto spanSize = mh->spanSize();
 
-  const auto bitmap1 = mh->bitmap().bits();
-  const auto bitmap2 = meshed->bitmap().bits();
+  mh->unsetPartialFree();
+  MiniHeap *toFree[kMaxMeshes];
+  size_t last = 0;
 
-  constexpr size_t nBits = 4;
-  for (size_t i = 0; i < nBits; ++i) {
-    if (~((~bitmap1[i]) | bitmap2[i])) {
-      return false;
+  MiniHeap *prev = mh;
+  auto nextId = mh->nextMeshed();
+  while (nextId.hasValue()) {
+    mh = GetMiniHeap(nextId);
+    nextId = mh->nextMeshed();
+    if (mh->isMeshedFull()) {
+      prev->setNextMeshed(nextId);
+      toFree[last++] = mh;
+    } else {
+      prev = mh;
     }
   }
-  freeMiniheapLocked(meshed, false);
-  mh->clearNextMeshed();
-  return true;
+  prev->setNextMeshed(nextId);
+  for (size_t i = 0; i < last; i++) {
+    MiniHeap *mh = toFree[i];
+    d_assert(mh->isMeshed());
+    mh->setMeshedLeader(MiniHeapID{});
+    Super::free(reinterpret_cast<void *>(mh->getSpanStart(arenaBegin())), spanSize, internal::PageType::Meshed);
+    freeMiniheapAfterMeshLocked(mh, false);
+  }
+  return last;
 }
 
 size_t GlobalHeap::meshSizeClassLocked(size_t sizeClass, MergeSetArray &mergeSets, SplitArray &left,
@@ -388,13 +367,15 @@ size_t GlobalHeap::meshSizeClassLocked(size_t sizeClass, MergeSetArray &mergeSet
     // merge _into_ the one with a larger mesh count, potentially
     // swapping the order of the pair
     auto dstCount = dst->meshCount();
-    if (dstCount > 1 && unboundMeshSlowly(dst)) {
-      dstCount = 1;
+    if (dstCount > 1 && dst->isPartialFree()) {
+      dstCount -= unboundMeshSlowly(dst);
+      d_assert(dst->meshCount() == dstCount);
     }
 
     auto srcCount = src->meshCount();
-    if (srcCount > 1 && unboundMeshSlowly(src)) {
-      srcCount = 1;
+    if (srcCount > 1 && src->isPartialFree()) {
+      srcCount -= unboundMeshSlowly(src);
+      d_assert(src->meshCount() == srcCount);
     }
 
     if (dstCount + srcCount > kMaxMeshes) {
@@ -500,7 +481,6 @@ void GlobalHeap::dumpMiniHeaps(size_t sizeClass, const MiniHeapListEntry *minihe
   size_t release = 0;
   constexpr size_t kCap = 11;
   size_t fullness[kCap] = {0};
-
 
   MiniHeapID mhId = miniheaps->next();
   while (mhId != list::Head) {

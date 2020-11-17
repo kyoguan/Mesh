@@ -69,8 +69,7 @@ public:
   }
 
   // post: list has the index of all bits set to 1 in it, in a random order
-  inline uint32_t ATTRIBUTE_ALWAYS_INLINE refillFrom(uint8_t mhOffset, internal::Bitmap &bitmap,
-                                                     internal::Bitmap *meshedBitmap) {
+  inline uint32_t ATTRIBUTE_ALWAYS_INLINE refillFrom(uint8_t mhOffset, internal::Bitmap &bitmap) {
     d_assert(_maxCount > 0);
     d_assert_msg(_maxCount <= kMaxShuffleVectorLength, "objCount? %zu <= %zu", _maxCount, kMaxShuffleVectorLength);
 
@@ -97,10 +96,6 @@ public:
       // should fix that.
       if (i >= maxCount) {
         break;
-      }
-
-      if (unlikely(meshedBitmap)) {
-        meshedBitmap->tryToSet(i);
       }
 
       if (unlikely(isFull())) {
@@ -160,12 +155,7 @@ public:
       if (mh->isFull()) {
         continue;
       }
-      internal::Bitmap *meshed = nullptr;
-      if (unlikely(mh->hasMeshed())) {
-        meshed = &(mh->NextMeshedMiniHeap()->writableBitmap());
-      }
-
-      const auto allocCount = refillFrom(_attachedOff, mh->writableBitmap(), meshed);
+      const auto allocCount = refillFrom(_attachedOff, mh->writableBitmap());
       addedCapacity |= allocCount;
     }
 
@@ -212,7 +202,7 @@ public:
     // const auto ptrval = reinterpret_cast<uintptr_t>(ptr);
     // const size_t off = (ptrval - _start) / _objectSize;
     // const size_t off = (ptrval - _start) * _objectSizeReciprocal;
-    const size_t off = mh->getUnmeshedOff(reinterpret_cast<const void *>(_arenaBegin), ptr);
+    const size_t off = mh->getOff(reinterpret_cast<const void *>(_arenaBegin), ptr);
     // hard_assert_msg(off == off2, "%zu != %zu", off, off2);
 
     d_assert(off < 256);

@@ -471,8 +471,7 @@ void *Runtime::bgFreePhysThread(void *arg) {
 
     if (idle_count > 100) {
       std::this_thread::sleep_for(1ms);
-    }
-    else {
+    } else {
       std::this_thread::yield();
     }
   }

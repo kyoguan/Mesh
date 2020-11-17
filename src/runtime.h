@@ -91,9 +91,9 @@ public:
   }
 
   bool sendFreeCmd(internal::FreeCmd *fComand) {
-    bool isOk =  _pagesFreeCmdBuffer->try_push(fComand);
+    bool isOk = _pagesFreeCmdBuffer->try_push(fComand);
 
-    if(!_freeThreadRunning) {
+    if (!_freeThreadRunning) {
       freeInFrontGround();
     }
 

@@ -35,7 +35,9 @@ private:
   static constexpr uint32_t FreelistIdShift = 6;
   static constexpr uint32_t ShuffleVectorOffsetShift = 8;
   static constexpr uint32_t MaxCountShift = 16;
+  static constexpr uint32_t EpochShift = 25;
   static constexpr uint32_t MeshedOffset = 30;
+  static constexpr uint32_t PartialFreeOffset = 31;
 
   inline void ATTRIBUTE_ALWAYS_INLINE setMasked(uint32_t mask, uint32_t newVal) {
     uint32_t oldFlags = _flags.load(std::memory_order_relaxed);
@@ -50,7 +52,7 @@ private:
 public:
   explicit Flags(uint32_t maxCount, uint32_t sizeClass, uint32_t svOffset, uint32_t freelistId) noexcept
       : _flags{(maxCount << MaxCountShift) + (sizeClass << SizeClassShift) + (svOffset << ShuffleVectorOffsetShift) +
-               (freelistId << FreelistIdShift)} {
+               (freelistId << FreelistIdShift) + (((_flags >> EpochShift) & 0x1f) << EpochShift)} {
     d_assert((freelistId & 0x3) == freelistId);
     d_assert((sizeClass & ((1 << FreelistIdShift) - 1)) == sizeClass);
     d_assert(svOffset < 255);
@@ -91,6 +93,17 @@ public:
     setMasked(mask, newVal);
   }
 
+  inline uint32_t createEpoch() const {
+    return (_flags.load(std::memory_order_seq_cst) >> EpochShift) & 0x1f;
+  }
+
+  inline void incCreateEpoch() {
+    uint32_t epoch = (createEpoch() + 1) & 0x1f;
+    uint32_t mask = ~(static_cast<uint32_t>(0x1f) << EpochShift);
+    uint32_t newVal = (static_cast<uint32_t>(epoch) << EpochShift);
+    setMasked(mask, newVal);
+  }
+
   inline void setMeshed() {
     set(MeshedOffset);
   }
@@ -101,6 +114,18 @@ public:
 
   inline bool ATTRIBUTE_ALWAYS_INLINE isMeshed() const {
     return is(MeshedOffset);
+  }
+
+  inline void setPartialFree() {
+    set(PartialFreeOffset);
+  }
+
+  inline void unsetPartialFree() {
+    unset(PartialFreeOffset);
+  }
+
+  inline bool ATTRIBUTE_ALWAYS_INLINE isPartialFree() const {
+    return is(PartialFreeOffset);
   }
 
 private:
@@ -144,7 +169,7 @@ public:
   MiniHeap(void *arenaBegin, Span span, size_t objectCount, size_t objectSize)
       : _bitmap(objectCount),
         _span(span),
-        _flags(objectCount, objectCount > 1 ? SizeMap::SizeClass(objectSize) : 1, 0, list::Attached),
+        _flags(objectCount, objectCount > 1 ? SizeMap::SizeClass(objectSize) : kClassSizesMax, 0, list::Attached),
         _objectSizeReciprocal(1.0 / (float)objectSize) {
     // debug("sizeof(MiniHeap): %zu", sizeof(MiniHeap));
 
@@ -164,6 +189,7 @@ public:
   }
 
   ~MiniHeap() {
+    _flags.incCreateEpoch();
     // debug("destruct:\n");
     // dumpDebug();
   }
@@ -191,8 +217,12 @@ public:
     freeOff(off);
   }
 
-  inline bool clearIfNotFree(void *arenaBegin, void *ptr) {
-    const ssize_t off = getOff(arenaBegin, ptr);
+  inline bool meshedFree(const uint8_t off) {
+    _bitmap.tryToSet(off);
+    return isMeshedFull();
+  }
+
+  inline bool clearIfNotFree(const uint8_t off) {
     const auto notWasSet = _bitmap.unset(off);
     const auto wasSet = !notWasSet;
     return wasSet;
@@ -209,7 +239,6 @@ public:
     d_assert(src != this);
     d_assert(objectSize() == src->objectSize());
 
-    src->setMeshed();
     const auto srcSpan = src->getSpanStart(arenaBegin);
     const auto objectSize = this->objectSize();
 
@@ -234,21 +263,13 @@ public:
       // debug("\t'%s'\n", srcObject);
     }
 
-    auto mh = NextMeshedMiniHeap();
-    if (mh) {
-      mh->takeBitmap();  // rewrite it with clear?
-    } else {
-      srcBitmap.invert();
-      uint32_t max = maxCount();
-      // use exchange?
-      for (auto const &off : srcBitmap) {
-        if (off < max) {
-          src->_bitmap.tryToSet(off);
-        } else {
-          break;
-        }
+    src->bitmap().setBits(srcBitmap.bits());
+    src->forEachMeshed([&](const MiniHeap *mh) {
+      if (mh != src) {
+        src->bitmap().setBits(mh->bitmap().bits());
       }
-    }
+      return false;
+    });
 
     trackMeshedSpan(GetMiniHeapID(src));
   }
@@ -279,6 +300,10 @@ public:
     return _flags.sizeClass();
   }
 
+  inline uint32_t createEpoch() const {
+    return _flags.createEpoch();
+  }
+
   inline uintptr_t getSpanStart(const void *arenaBegin) const {
     const auto beginval = reinterpret_cast<uintptr_t>(arenaBegin);
     return beginval + _span.offset * kPageSize;
@@ -296,11 +321,16 @@ public:
     return _bitmap.inUseCount();
   }
 
+  inline bool isMeshedFull() const {
+    return _bitmap.inUseCount() == _bitmap.bitCount();
+  }
+
   inline size_t bytesFree() const {
     return inUseCount() * objectSize();
   }
 
-  inline void setMeshed() {
+  inline void setMeshed(MiniHeapID leader) {
+    _freelist.setPrev(leader);
     _flags.setMeshed();
   }
 
@@ -351,6 +381,19 @@ public:
     return _nextMeshed.hasValue();
   }
 
+  inline void setPartialFree() {
+    d_assert(hasMeshed());
+    _flags.setPartialFree();
+  }
+
+  inline void unsetPartialFree() {
+    _flags.unsetPartialFree();
+  }
+
+  inline bool ATTRIBUTE_ALWAYS_INLINE isPartialFree() const {
+    return _flags.isPartialFree();
+  }
+
   inline void ATTRIBUTE_ALWAYS_INLINE clearNextMeshed() {
     d_assert(_nextMeshed.hasValue());
     _nextMeshed = MiniHeapID{};
@@ -373,6 +416,10 @@ public:
     return result;
   }
 
+  internal::Bitmap &bitmap() {
+    return _bitmap;
+  }
+
   const internal::Bitmap &bitmap() const {
     return _bitmap;
   }
@@ -392,9 +439,21 @@ public:
   }
 
 public:
-  inline MiniHeap *NextMeshedMiniHeap() const {
-    if (_nextMeshed.hasValue()) {
-      return GetMiniHeap(_nextMeshed);
+  inline const MiniHeapID nextMeshed() const {
+    return _nextMeshed;
+  }
+
+  inline void setNextMeshed(MiniHeapID id) {
+    _nextMeshed = id;
+  }
+
+  inline void setMeshedLeader(MiniHeapID leader) {
+    _freelist.setPrev(leader);
+  }
+
+  inline MiniHeap *meshedLeader() {
+    if (isMeshed()) {
+      return GetMiniHeap(_freelist.prev());
     }
     return nullptr;
   }
@@ -480,7 +539,7 @@ public:
   }
 
   // this only works for unmeshed miniheaps
-  inline uint8_t ATTRIBUTE_ALWAYS_INLINE getUnmeshedOff(const void *arenaBegin, void *ptr) const {
+  inline uint8_t ATTRIBUTE_ALWAYS_INLINE getOff(const void *arenaBegin, void *ptr) const {
     const auto ptrval = reinterpret_cast<uintptr_t>(ptr);
 
     uintptr_t span = reinterpret_cast<uintptr_t>(arenaBegin) + _span.offset * kPageSize;
@@ -492,54 +551,7 @@ public:
     return off;
   }
 
-  inline uint8_t ATTRIBUTE_ALWAYS_INLINE getOff(const void *arenaBegin, void *ptr) const {
-    const auto span = spanStart(reinterpret_cast<uintptr_t>(arenaBegin), ptr);
-    d_assert(span != 0);
-    const auto ptrval = reinterpret_cast<uintptr_t>(ptr);
-
-    const size_t off = (ptrval - span) * _objectSizeReciprocal;
-    d_assert(off < maxCount());
-
-    return off;
-  }
-
 protected:
-  inline uintptr_t ATTRIBUTE_ALWAYS_INLINE spanStart(uintptr_t arenaBegin, void *ptr) const {
-    const auto ptrval = reinterpret_cast<uintptr_t>(ptr);
-    const auto len = _span.byteLength();
-
-    // manually unroll loop once to capture the common case of
-    // un-meshed miniheaps
-    uintptr_t spanptr = arenaBegin + _span.offset * kPageSize;
-    if (likely(spanptr <= ptrval && ptrval < spanptr + len)) {
-      return spanptr;
-    }
-
-    return spanStartSlowpath(arenaBegin, ptrval);
-  }
-
-  uintptr_t ATTRIBUTE_NEVER_INLINE spanStartSlowpath(uintptr_t arenaBegin, uintptr_t ptrval) const {
-    const auto len = _span.byteLength();
-    uintptr_t spanptr = 0;
-
-    const MiniHeap *mh = this;
-    while (true) {
-      if (unlikely(!mh->_nextMeshed.hasValue())) {
-        abort();
-      }
-
-      mh = GetMiniHeap(mh->_nextMeshed);
-
-      const uintptr_t meshedSpanptr = arenaBegin + mh->span().offset * kPageSize;
-      if (meshedSpanptr <= ptrval && ptrval < meshedSpanptr + len) {
-        spanptr = meshedSpanptr;
-        break;
-      }
-    };
-
-    return spanptr;
-  }
-
   internal::Bitmap _bitmap;           // 32 bytes 32
   const Span _span;                   // 8        40
   MiniHeapListEntry _freelist{};      // 8        48

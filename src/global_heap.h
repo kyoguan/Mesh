@@ -216,14 +216,9 @@ public:
   inline void releaseMiniheapLocked(MiniHeap *mh, int sizeClass) {
     // ensure this flag is always set with the miniheap lock held
     mh->unsetAttached();
-
-    auto meshed = mh->NextMeshedMiniHeap();
-    if (unlikely(meshed && meshed->inUseCount() == meshed->maxCount())) {
-      // debug("release meshed miniheap earily!");
-      freeMiniheapLocked(meshed, false);
-      mh->clearNextMeshed();
+    if (mh->hasMeshed() && mh->isPartialFree()) {
+      unboundMeshSlowly(mh);
     }
-
     const auto inUse = mh->inUseCount();
     postFreeLocked(mh, sizeClass, inUse);
   }
@@ -256,6 +251,10 @@ public:
 
       // TODO: we can eventually remove this
       d_assert(!(mh->isFull() || mh->isAttached() || mh->isMeshed()));
+
+      if (mh->hasMeshed() && mh->isPartialFree()) {
+        unboundMeshSlowly(mh);
+      }
 
       // TODO: this is commented out to match a bug in the previous implementation;
       // it turns out if you don't track bytes free and give more memory to the
@@ -406,6 +405,9 @@ public:
     for (size_t i = 0; i < last; i++) {
       MiniHeap *mh = toFree[i];
       const bool isMeshed = mh->isMeshed();
+      if (isMeshed) {
+        mh->setMeshedLeader(MiniHeapID{});
+      }
       const auto type = isMeshed ? internal::PageType::Meshed : internal::PageType::Dirty;
       Super::free(reinterpret_cast<void *>(mh->getSpanStart(arenaBegin())), spanSize, type);
       _stats.mhFreeCount++;
@@ -548,7 +550,7 @@ public:
 private:
   // check for meshes in all size classes -- must be called LOCKED
   void meshAllSizeClassesLocked();
-  bool unboundMeshSlowly(MiniHeap *mh);
+  size_t unboundMeshSlowly(MiniHeap *mh);
   // meshSizeClassLocked returns the number of merged sets found
   size_t meshSizeClassLocked(size_t sizeClass, MergeSetArray &mergeSets, SplitArray &left, SplitArray &right);
 

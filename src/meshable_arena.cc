@@ -686,10 +686,6 @@ void MeshableArena::finalizeMesh(void *keep, void *remove, size_t sz) {
   const auto removeOff = offsetFor(remove);
 
   const size_t pageCount = sz / kPageSize;
-  const MiniHeapID keepID = _mhIndex[keepOff].load(std::memory_order_acquire);
-  for (size_t i = 0; i < pageCount; i++) {
-    setIndex(removeOff + i, keepID);
-  }
 
   hard_assert(pageCount < std::numeric_limits<Length>::max());
   const Span removedSpan{removeOff, static_cast<Length>(pageCount)};
@@ -899,6 +895,9 @@ void MeshableArena::afterForkChild() {
 
     for (auto const &i : _meshedBitmap) {
       MiniHeap *mh = reinterpret_cast<MiniHeap *>(miniheapForArenaOffset(i));
+      if (mh) {
+        mh = mh->meshedLeader();
+      }
       if (!mh || seenMiniheaps.find(mh) != seenMiniheaps.end()) {
         continue;
       }
@@ -919,14 +918,6 @@ void MeshableArena::afterForkChild() {
           return false;
 
         const auto remove = reinterpret_cast<void *>(mh->getSpanStart(arenaBegin()));
-        const auto removeOff = offsetFor(remove);
-
-#ifndef NDEBUG
-        const Length pageCount = sz / kPageSize;
-        for (size_t i = 0; i < pageCount; i++) {
-          d_assert(_mhIndex[removeOff + i].load().value() == _mhIndex[keepOff].load().value());
-        }
-#endif
 
         void *ptr = mmap(remove, sz, HL_MMAP_PROTECTION_MASK, kMapShared | MAP_FIXED, newFd, keepOff * kPageSize);
 

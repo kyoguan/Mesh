@@ -143,6 +143,19 @@ public:
     return popcount64(_bits[0]) + popcount64(_bits[1]) + popcount64(_bits[2]) + popcount64(_bits[3]);
   }
 
+  template <class Word>
+  void setBits(const Word *bits) {
+    for (size_t i = 0; i < wordCount(representationSize(maxBits)); i++) {
+      size_t oldValue = _bits[i].load(std::memory_order_relaxed);
+      while (!atomic_compare_exchange_weak_explicit(&_bits[i],                  // address of word
+                                                    &oldValue,                  // old val
+                                                    oldValue | ~bits[i],        // new val
+                                                    std::memory_order_release,  // success mem model
+                                                    std::memory_order_relaxed)) {
+      }
+    }
+  }
+
 protected:
   inline void nullBits() {
   }
