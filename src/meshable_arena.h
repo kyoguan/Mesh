@@ -304,7 +304,7 @@ protected:
 
 private:
   Offset _end{};  // in pages
-
+  Offset _lastFlushBegin{};
   // spans that had been meshed, have been freed, and need to be reset
   // to identity mappings in the page tables.
   internal::vector<Span> _toReset;

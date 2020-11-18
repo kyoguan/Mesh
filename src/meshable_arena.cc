@@ -424,28 +424,10 @@ void MeshableArena::free(void *ptr, size_t sz, internal::PageType type) {
   freeSpan(span, type);
 }
 
-static size_t flushAllSpansToVector(internal::vector<Span> freeSpans[kSpanClassCount],
-                                    internal::vector<Span> &flushSpans, size_t needFreeCount) {
+static size_t flushSpansByOffset(internal::vector<Span> freeSpans[kSpanClassCount], internal::vector<Span> &flushSpans,
+                                 Offset offsetBegin, size_t needFreeCount) {
   size_t freeCount = 0;
-
-  flushSpans.reserve(needFreeCount);
-
-  for (size_t i = 0; i < kSpanClassCount; ++i) {
-    auto &spans = freeSpans[i];
-    for (auto &s : spans) {
-      flushSpans.emplace_back(s);
-      freeCount += s.length;
-    }
-
-    spans.clear();
-  }
-
-  return freeCount;
-}
-
-static size_t flushSpansToVector(internal::vector<Span> freeSpans[kSpanClassCount], internal::vector<Span> &flushSpans,
-                                 size_t needFreeCount) {
-  size_t freeCount = 0;
+  Offset offsetEnd = offsetBegin + needFreeCount;
 
   flushSpans.reserve(needFreeCount);
 
@@ -455,21 +437,18 @@ static size_t flushSpansToVector(internal::vector<Span> freeSpans[kSpanClassCoun
     if (spans.empty())
       continue;
 
-    bool clear = true;
-    for (int j = spans.size() - 1; j >= 0; --j) {
-      if (freeCount < needFreeCount) {
-        flushSpans.emplace_back(spans[j]);
-        freeCount += spans[j].length;
+    internal::vector<Span> rest;
+    rest.reserve(spans.size());
+
+    for (auto &span : spans) {
+      if (offsetBegin <= span.offset && span.offset < offsetEnd) {
+        flushSpans.emplace_back(span);
+        freeCount += span.length;
       } else {
-        spans.resize(j + 1);
-        clear = false;
-        break;
+        rest.emplace_back(span);
       }
     }
-
-    if (clear) {
-      spans.clear();
-    }
+    spans.swap(rest);
   }
 
   return freeCount;
@@ -559,28 +538,23 @@ void MeshableArena::tryAndSendToFree(internal::FreeCmd *fCommand) {
 }
 
 void MeshableArena::partialScavenge() {
-  //  getSpansFromBg();
-  // always flush 1/2 pages
   size_t needFreeCount = 0;
 
   if (_dirtyPageCount > kMaxDirtyPageThreshold) {
-    needFreeCount = (kMaxDirtyPageThreshold - kMinDirtyPageThreshold) / 5;
+    needFreeCount = _end / 5;
   }
 
   internal::FreeCmd *freeCommand = new internal::FreeCmd(internal::FreeCmd::FREE_DIRTY_PAGE);
+  size_t freeCount = flushSpansByOffset(_dirty, freeCommand->spans, _lastFlushBegin, needFreeCount);
 
-  // debug("partialScavenge  need to free needFreeCount = %d\n", needFreeCount);
-
-  // size_t freeCount = flushAllSpansToVector(_dirty, freeCommand->spans, _dirtyPageCount);
-  size_t freeCount = flushSpansToVector(_dirty, freeCommand->spans, needFreeCount);
-
-  // debug("partialScavenge _dirtyPageCount = %d  , freeCount = %d , flushSpans->size() =  %d\n", _dirtyPageCount,
-  // freeCount, flushSpans->size());
   _dirtyPageCount -= freeCount;
 
+  _lastFlushBegin += needFreeCount;
+  if (_lastFlushBegin >= _end) {
+    _lastFlushBegin = 0;
+  }
+
   tryAndSendToFree(freeCommand);
-  // tryAndSendToFree(new internal::FreeCmd(internal::FreeCmd::FLUSH));
-  // debug("partial FreeCmd::FLUSH");
 }
 
 void MeshableArena::scavenge(bool force) {
@@ -611,25 +585,25 @@ void MeshableArena::scavenge(bool force) {
   tryAndSendToFree(unmapCommand);
 
   internal::FreeCmd *freeCommand = new internal::FreeCmd(internal::FreeCmd::FREE_DIRTY_PAGE);
-  // dirty page is small, then we don't send the clean page to merge.
-  size_t needFreeCount = 0;
 
-  if (_dirtyPageCount > kMaxDirtyPageThreshold) {
-    needFreeCount = (kMaxDirtyPageThreshold - kMinDirtyPageThreshold) / 5;
-  }
-  // size_t freeCount = flushAllSpansToVector(_dirty, freeCommand->spans, _dirtyPageCount);
-  size_t freeCount = flushSpansToVector(_dirty, freeCommand->spans, needFreeCount);
+  size_t needFreeCount = _end / 5;
+
+  size_t freeCount = flushSpansByOffset(_dirty, freeCommand->spans, _lastFlushBegin, needFreeCount);
+
   _dirtyPageCount -= freeCount;
 
   tryAndSendToFree(freeCommand);
 
-  if (freeCount < kMinDirtyPageThreshold) {
-    internal::FreeCmd *cleanCommand = new internal::FreeCmd(internal::FreeCmd::CLEAN_PAGE);
-    freeCount = flushAllSpansToVector(_clean, cleanCommand->spans, 0);
+  internal::FreeCmd *cleanCommand = new internal::FreeCmd(internal::FreeCmd::CLEAN_PAGE);
+  freeCount = flushSpansByOffset(_clean, cleanCommand->spans, _lastFlushBegin, needFreeCount);
 
-    tryAndSendToFree(cleanCommand);
-    // debug("FreeCmd::CLEAN_PAGE");
+  _lastFlushBegin += needFreeCount;
+  if (_lastFlushBegin >= _end) {
+    _lastFlushBegin = 0;
   }
+
+  tryAndSendToFree(cleanCommand);
+  // debug("FreeCmd::CLEAN_PAGE");
 
   tryAndSendToFree(new internal::FreeCmd(internal::FreeCmd::FLUSH));
 
