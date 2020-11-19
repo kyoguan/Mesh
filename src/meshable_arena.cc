@@ -537,6 +537,19 @@ void MeshableArena::tryAndSendToFree(internal::FreeCmd *fCommand) {
   }
 }
 
+void MeshableArena::dumpSpans() {
+  size_t dirty = 0;
+  size_t clean = 0;
+  for (size_t i = 0; i < kSpanClassCount; ++i) {
+    if (_dirty[i].size() || _clean[i].size()) {
+      debug("MeshInfo spanClass:%-3lu  dirty:%6zu, clean:%6zu", i, _dirty[i].size(), _clean[i].size());
+      dirty += _dirty[i].size();
+      clean += _clean[i].size();
+    }
+  }
+  debug("MeshInfo span summary reset: %zu, dirty: %zu, clean: %zu", _toReset.size(), dirty, clean);
+}
+
 void MeshableArena::partialScavenge() {
   size_t needFreeCount = 0;
 

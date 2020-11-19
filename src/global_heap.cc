@@ -534,6 +534,10 @@ void GlobalHeap::dumpList(int level) {
       }
     }
   }
+  if (level > 0) {
+    lock_guard<mutex> lock(_miniheapLock);
+    dumpSpans();
+  }
 }
 
 namespace method {

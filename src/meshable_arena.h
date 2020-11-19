@@ -299,6 +299,7 @@ private:
 protected:
   void getSpansFromBg(bool wait = false);
   void tryAndSendToFree(internal::FreeCmd *fCommand);
+  void dumpSpans();
   CheapHeap<64, kArenaSize / kPageSize> _mhAllocator{};
   MWC _fastPrng;
 
