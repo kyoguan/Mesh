@@ -491,7 +491,7 @@ void Runtime::unlock() {
   _mutex.unlock();
 }
 
-#ifdef __linux__
+#if 0 // __linux__
 int Runtime::epollWait(int __epfd, struct epoll_event *__events, int __maxevents, int __timeout) {
   if (unlikely(mesh::real::epoll_wait == nullptr))
     mesh::real::init();
