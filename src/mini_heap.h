@@ -382,7 +382,6 @@ public:
   }
 
   inline void setPartialFree() {
-    d_assert(hasMeshed());
     _flags.setPartialFree();
   }
 
@@ -392,11 +391,6 @@ public:
 
   inline bool ATTRIBUTE_ALWAYS_INLINE isPartialFree() const {
     return _flags.isPartialFree();
-  }
-
-  inline void ATTRIBUTE_ALWAYS_INLINE clearNextMeshed() {
-    d_assert(_nextMeshed.hasValue());
-    _nextMeshed = MiniHeapID{};
   }
 
   inline bool isMeshingCandidate() const {
