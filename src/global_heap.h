@@ -320,8 +320,8 @@ public:
     // multiple pages to amortize the cost of creating a
     // miniheap/globally locking the heap.  For example, asking for
     // 2048 byte objects would allocate 4 4KB pages.
-    const size_t objectCount = max(kPageSize / objectSize, kMinStringLen);
-    const size_t pageCount = PageCount(objectSize * objectCount);
+    const size_t pageCount = static_cast<size_t>(SizeMap::SizeClassToPageCount(sizeClass));
+    const size_t objectCount = pageCount * kPageSize / objectSize;
 
     while (bytesFree < kMiniheapRefillGoalSize && !miniheaps.full()) {
       auto mh = allocMiniheapLocked(sizeClass, pageCount, objectCount, objectSize);
@@ -569,14 +569,14 @@ private:
 
   // these must only be accessed or modified with the _miniheapLock held
   std::array<std::pair<MiniHeapListEntry, size_t>, kNumBins> _emptyFreelist{
-      Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head,
-      Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head};
+      Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head,
+      Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head};
   std::array<std::pair<MiniHeapListEntry, size_t>, kNumBins> _partialFreelist{
-      Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head,
-      Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head};
+      Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head,
+      Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head};
   std::array<std::pair<MiniHeapListEntry, size_t>, kNumBins> _fullList{
-      Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head,
-      Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head};
+      Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head,
+      Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head, Head};
 
   mutable mutex _miniheapLock{};
 
@@ -586,7 +586,7 @@ private:
   time::time_point _lastMesh;
 };
 
-static_assert(kNumBins == 25, "if this changes, add more 'Head's above");
+static_assert(kNumBins == 37, "if this changes, add more 'Head's above");
 static_assert(sizeof(std::array<MiniHeapListEntry, kNumBins>) == kNumBins * 8, "list size is right");
 static_assert(sizeof(GlobalHeap) < (kNumBins * 8 * 3 + 64 * 7 + 100000), "gh small enough");
 }  // namespace mesh

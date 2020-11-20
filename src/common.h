@@ -66,7 +66,7 @@ static constexpr int kMapShared = kMeshingEnabled ? MAP_SHARED : MAP_PRIVATE | M
 
 static constexpr size_t kMinObjectSize = 16;
 static constexpr size_t kMaxSize = 16384;
-static constexpr size_t kClassSizesMax = 25;
+static constexpr size_t kClassSizesMax = 37;
 static constexpr size_t kAlignment = 8;
 static constexpr int kMinAlign = 16;
 static constexpr uint64_t kPageSize = 4096;
@@ -95,7 +95,7 @@ static constexpr size_t kMinDirtyPageThreshold = 1 << 13;  // 32  MB in pages
 
 static constexpr uint32_t kSpanClassCount = 256;
 
-static constexpr int kNumBins = 25;  // 16Kb max object size
+static constexpr int kNumBins = 37;  // 16Kb max object size
 static constexpr int kDefaultMeshPeriod = 10000;
 
 static constexpr size_t kMinArenaExpansion = 4096;  // 16 MB in pages
@@ -379,6 +379,7 @@ private:
 
   // Mapping from size class to max size storable in that class
   static const int32_t class_to_size_[kClassSizesMax];
+  static const int32_t class_to_page_[kClassSizesMax];
 
 public:
   static constexpr size_t num_size_classes = 25;
@@ -390,6 +391,10 @@ public:
 
   static inline int SizeClass(size_t size) {
     return class_array_[ClassIndex(size)];
+  }
+
+  static inline int SizeClassToPageCount(size_t sizeClass) {
+    return class_to_page_[sizeClass];
   }
 
   // Check if size is small enough to be representable by a size

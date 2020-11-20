@@ -51,9 +51,9 @@ public:
         _maxObjectSize(SizeMap::ByteSizeForClass(kNumBins - 1)) {
     const auto arenaBegin = _global->arenaBegin();
     // when asked, give 16-byte allocations for 0-byte requests
-    _shuffleVector[0].initialInit(arenaBegin, SizeMap::ByteSizeForClass(1));
+    _shuffleVector[0].initialInit(arenaBegin, 1);
     for (size_t i = 1; i < kNumBins; i++) {
-      _shuffleVector[i].initialInit(arenaBegin, SizeMap::ByteSizeForClass(i));
+      _shuffleVector[i].initialInit(arenaBegin, i);
     }
     d_assert(_global != nullptr);
   }

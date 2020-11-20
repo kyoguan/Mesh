@@ -28,9 +28,12 @@ const unsigned char SizeMap::class_array_[kClassArraySize] = {
 
 ATTRIBUTE_ALIGNED(CACHELINE_SIZE)
 const int32_t SizeMap::class_to_size_[kClassSizesMax] = {
-    16,  16,  32,  48,  64,  80,  96,  112,  128,  160,  192,  224,   256,
-    320, 384, 448, 512, 640, 768, 896, 1024, 2048, 4096, 8192, 16384,
+    16,  16,   32,   48,   64,   80,   96,   112,  128,  160,  192,  224,  256,  320,  384,   448,   512,   640,   768,
+    896, 1024, 1280, 1536, 1792, 2048, 2560, 3072, 3584, 4096, 5120, 6144, 7168, 8192, 10240, 12288, 14336, 16384,
 };
+
+const int32_t SizeMap::class_to_page_[kClassSizesMax] = {1, 1, 1, 1, 1, 1, 3, 2, 1, 2, 1, 1, 1, 5, 3, 1, 1, 3, 3,
+                                                         2, 1, 5, 3, 4, 2, 5, 3, 7, 2, 5, 3, 7, 4, 5, 6, 7, 8};
 
 // const internal::BinToken::Size internal::BinToken::Max = numeric_limits<uint32_t>::max();
 // const internal::BinToken::Size internal::BinToken::MinFlags = numeric_limits<uint32_t>::max() - 4;
@@ -491,7 +494,7 @@ void Runtime::unlock() {
   _mutex.unlock();
 }
 
-#if 0 // __linux__
+#if 0  // __linux__
 int Runtime::epollWait(int __epfd, struct epoll_event *__events, int __maxevents, int __timeout) {
   if (unlikely(mesh::real::epoll_wait == nullptr))
     mesh::real::init();

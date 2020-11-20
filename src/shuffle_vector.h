@@ -252,11 +252,13 @@ public:
   }
 
   // called once, on initialization of ThreadLocalHeap
-  inline void initialInit(const char *arenaBegin, uint32_t sz) {
+  inline void initialInit(const char *arenaBegin, size_t sizeClass) {
+    uint32_t sz = SizeMap::ByteSizeForClass(sizeClass);
     _arenaBegin = arenaBegin;
     _objectSize = sz;
     _objectSizeReciprocal = 1.0 / (float)sz;
-    _maxCount = max(kPageSize / sz, kMinStringLen);
+    _maxCount = SizeMap::SizeClassToPageCount(sizeClass) * kPageSize / sz;
+    hard_assert(_maxCount > 0);
     // initially, we are unattached and therefor have no capacity.
     // Setting _off to _maxCount causes isExhausted() to return true
     // so that we don't separately have to check !isAttached() in the
