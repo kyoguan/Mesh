@@ -594,6 +594,9 @@ void Runtime::segfaultHandler(int sig, siginfo_t *siginfo, void *context) {
   if (runtime().pid() != getpid()) {
     // we are just after fork, and glibc sucks.
     runtime().heap().doAfterForkChild();
+    if (siginfo->si_code == SEGV_MAPERR && runtime().heap().okToProceed(siginfo->si_addr)) {
+      return;
+    }
   }
 
   // okToProceed is a barrier that ensures any in-progress meshing has

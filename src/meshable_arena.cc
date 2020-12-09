@@ -776,6 +776,8 @@ void MeshableArena::prepareForFork() {
     return;
   }
 
+  madvise(_arenaBegin, kArenaSize, MADV_DONTFORK);
+
   // debug("%d: prepare fork", getpid());
   runtime().heap().lock();
   runtime().lock();
@@ -868,8 +870,6 @@ void MeshableArena::afterForkChild() {
   while (write(_forkPipe[1], "ok", strlen("ok")) == EAGAIN) {
   }
 
-  int r = mprotect(_arenaBegin, kArenaSize, PROT_READ | PROT_WRITE);
-  hard_assert(r == 0);
 
   // remap the new region over the old
   void *ptr = mmap(_arenaBegin, kArenaSize, HL_MMAP_PROTECTION_MASK, kMapShared | MAP_FIXED, newFd, 0);
