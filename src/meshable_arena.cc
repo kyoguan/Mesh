@@ -783,8 +783,8 @@ void MeshableArena::prepareForFork() {
   runtime().lock();
   internal::Heap().lock();
 
-  // int r = mprotect(_arenaBegin, kArenaSize, PROT_READ);
-  // hard_assert(r == 0);
+  int r = mprotect(_arenaBegin, kArenaSize, PROT_READ);
+  hard_assert(r == 0);
 
   int err = pipe(_forkPipe);
   if (err == -1) {
