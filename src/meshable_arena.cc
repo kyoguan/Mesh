@@ -55,7 +55,9 @@ MeshableArena::MeshableArena() : SuperHeap(), _fastPrng(internal::seed(), intern
   hard_assert(_mhIndex != nullptr);
 
   if (kAdviseDump) {
-    madvise(_arenaBegin, kArenaSize, MADV_DONTDUMP);
+    madvise(_arenaBegin, kArenaSize, MADV_DONTDUMP | MADV_DONTFORK);
+  } else {
+    madvise(_arenaBegin, kArenaSize, MADV_DONTFORK);
   }
 
   // debug("MeshableArena(%p): fd:%4d\t%p-%p\n", this, fd, _arenaBegin, arenaEnd());
@@ -147,7 +149,7 @@ void MeshableArena::expandArena(size_t minPagesAdded) {
   if (kAdviseDump) {
     auto ptr = ptrFromOffset(expansion.offset);
     auto sz = expansion.byteLength();
-    madvise(ptr, sz, MADV_DODUMP);
+    madvise(ptr, sz, MADV_DODUMP | MADV_DONTFORK);
   }
 
   // for(size_t i = 0; i < kSpanClassCount; ++i) {
@@ -776,15 +778,13 @@ void MeshableArena::prepareForFork() {
     return;
   }
 
-  madvise(_arenaBegin, kArenaSize, MADV_DONTFORK);
-
   // debug("%d: prepare fork", getpid());
   runtime().heap().lock();
   runtime().lock();
   internal::Heap().lock();
 
-  int r = mprotect(_arenaBegin, kArenaSize, PROT_READ);
-  hard_assert(r == 0);
+  // int r = mprotect(_arenaBegin, kArenaSize, PROT_READ);
+  // hard_assert(r == 0);
 
   int err = pipe(_forkPipe);
   if (err == -1) {
@@ -862,21 +862,20 @@ void MeshableArena::afterForkChild() {
   const int oldFd = _fd;
 
   const size_t end = _end * kPageSize;
-  for (size_t i = 0; i < end; i += kForkCopyFileSize) {
-    int result = internal::copyFile(newFd, oldFd, i, std::min(end - i, kForkCopyFileSize));
-    d_assert(result >= 0);
-  }
+  int result = internal::copyFile(newFd, oldFd, 0, end);
+  d_assert(result >= 0);
 
   while (write(_forkPipe[1], "ok", strlen("ok")) == EAGAIN) {
   }
-
 
   // remap the new region over the old
   void *ptr = mmap(_arenaBegin, kArenaSize, HL_MMAP_PROTECTION_MASK, kMapShared | MAP_FIXED, newFd, 0);
   hard_assert_msg(ptr != MAP_FAILED, "map failed: %d", errno);
 
   if (kAdviseDump) {
-    madvise(_arenaBegin, kArenaSize, MADV_DONTDUMP);
+    madvise(_arenaBegin, kArenaSize, MADV_DONTDUMP | MADV_DONTFORK);
+  } else {
+    madvise(_arenaBegin, kArenaSize, MADV_DONTFORK);
   }
 
   // re-do the meshed mappings
