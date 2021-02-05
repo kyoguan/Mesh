@@ -814,9 +814,15 @@ void MeshableArena::afterForkParentAndChild() {
   size_t address_offset = _end * kPageSize;
 
   void *ptr = mmap(address, address_size, HL_MMAP_PROTECTION_MASK, kMapShared | MAP_FIXED, _fd, address_offset);
-  hard_assert_msg(ptr != MAP_FAILED, "map failed: %d, addr=%p, %u, %u", errno, address, address_size, address_offset);
+  hard_assert_msg(ptr == address, "map failed: %d, addr=%p, %u, %u", errno, address, address_size, address_offset);
   debug("afterForkParentAndChild remap %d: errno=%d, addr=%p, %u, %u", getpid(), errno, address, address_size,
         address_offset);
+
+  if (kAdviseDump) {
+    madvise(address, address_size, MADV_DONTDUMP | MADV_DONTFORK);
+  } else {
+    madvise(address, address_size, MADV_DONTFORK);
+  }
 
   // remap all the clean spans
   size_t count = 0;
@@ -882,7 +888,7 @@ bool MeshableArena::moveMiniHeapToNewFile(MiniHeap *mh, void *ptr) {
   MiniHeap *leader_mh = mh->meshedLeader();
 
   if (leader_mh != nullptr) {
-    debug("moveMiniHeapToNewFile %d: mh=%p  leader == nullptr\n", getpid(), mh);
+    debug("moveMiniHeapToNewFile %d: mh=%p  leader=%p\n", getpid(), mh, leader_mh);
   }
 
   leader_mh = mh;
@@ -895,9 +901,13 @@ bool MeshableArena::moveMiniHeapToNewFile(MiniHeap *mh, void *ptr) {
 
   // only copy the phys page once
   for (size_t i = 0; i < span.length; ++i) {
-    hard_assert_msg(!_cowBitmap.isSet(span.offset + i),
-                    "moveMiniHeapToNewFile %d: already COW span offset=%u, length=%u", getpid(), span.offset + i,
-                    span.length);
+    if (_cowBitmap.isSet(span.offset + i)) {
+      hard_assert_msg(i == 0, "moveMiniHeapToNewFile %d: already COW span offset=%u, length=%u", getpid(),
+                      span.offset + i, span.length);
+      debug("moveMiniHeapToNewFile %d: trigger doulbe move, just return and try again !!!", getpid(), span.offset + i,
+            span.length);
+      return true;
+    }
     d_assert(span.offset == keepOff);
   }
 

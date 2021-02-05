@@ -120,9 +120,9 @@ static constexpr std::chrono::milliseconds kMeshPeriodMs{100};  // 100 ms
 // controls aspects of miniheaps
 static constexpr size_t kMaxMeshes = 256;  // 1 per bit
 #ifdef __APPLE__
-static constexpr size_t kArenaSize = 32ULL * 1024ULL * 1024ULL * 1024ULL;  // 16 GB
+static constexpr size_t kArenaSize = 32ULL * 1024ULL * 1024ULL * 1024ULL;  // 32 GB
 #else
-static constexpr size_t kArenaSize = 32ULL * 1024ULL * 1024ULL * 1024ULL;  // 128 GB
+static constexpr size_t kArenaSize = 24ULL * 1024ULL * 1024ULL * 1024ULL;  // 24 GB
 #endif
 static constexpr size_t kAltStackSize = 16 * 1024UL;  // 16k sigaltstacks
 #define SIGQUIESCE (SIGRTMIN + 7)
