@@ -515,17 +515,37 @@ public:
 
     _lastMesh = now;
 
-    meshAllSizeClassesLocked();
+    if (_isCOWRunning) {
+      processCOWPage();
+    } else {
+      meshAllSizeClassesLocked();
+    }
   }
 
   inline bool okToProceed(void *ptr) const {
-    lock_guard<mutex> lock(_miniheapLock);
-
     if (ptr == nullptr) {
       return false;
     }
 
+    lock_guard<mutex> lock(_miniheapLock);
+
     return miniheapFor(ptr) != nullptr;
+  }
+
+  inline bool tryCopyOnWrite(void *ptr) {
+    if (ptr == nullptr) {
+      return false;
+    }
+
+    lock_guard<mutex> lock(_miniheapLock);
+
+    MiniHeap *mh = miniheapFor(ptr);
+
+    if (mh == nullptr) {
+      return false;
+    }
+
+    return moveMiniHeapToNewFile(mh, ptr);
   }
 
   inline internal::vector<MiniHeap *> meshingCandidatesLocked(int sizeClass) const {
@@ -553,6 +573,8 @@ private:
   size_t unboundMeshSlowly(MiniHeap *mh);
   // meshSizeClassLocked returns the number of merged sets found
   size_t meshSizeClassLocked(size_t sizeClass, MergeSetArray &mergeSets, SplitArray &left, SplitArray &right);
+
+  void processCOWPage();
 
   const size_t _maxObjectSize;
   atomic_size_t _meshPeriod{kDefaultMeshPeriod};

@@ -163,6 +163,10 @@ public:
     _meshedPageCount -= pageCount;
   }
 
+  bool isCOWRunning() const {
+    return _isCOWRunning;
+  }
+
 private:
   void expandArena(size_t minPagesAdded);
   bool findPages(size_t pageCount, Span &result, internal::PageType &type);
@@ -201,6 +205,11 @@ private:
   inline void freeSpan(const Span &span, const internal::PageType flags) {
     if (span.length == 0) {
       return;
+    }
+
+    if (_isCOWRunning) {
+      trackCOWed(span);
+      resetSpanMapping(span);
     }
 
     // this happens when we are trying to get an aligned allocation
@@ -273,24 +282,25 @@ private:
     }
   }
 
-  inline void trackMeshed(const Span &span) {
+  inline void trackCOWed(const Span &span) {
     for (size_t i = 0; i < span.length; i++) {
       // this may already be 1 if it was a meshed virtual span that is
       // now being re-meshed to a new owning miniheap
-      _meshedBitmap.tryToSet(span.offset + i);
+      _cowBitmap.tryToSet(span.offset + i);
     }
   }
 
-  inline void untrackMeshed(const Span &span) {
+  inline void untrackCOWed(const Span &span) {
     for (size_t i = 0; i < span.length; i++) {
-      d_assert(_meshedBitmap.isSet(span.offset + i));
-      _meshedBitmap.unset(span.offset + i);
+      d_assert(_cowBitmap.isSet(span.offset + i));
+      _cowBitmap.unset(span.offset + i);
     }
   }
 
   void prepareForFork();
   void afterForkParent();
   void afterForkChild();
+  void afterForkParentAndChild();
 
   void *_arenaBegin{nullptr};
   // indexed by page offset.
@@ -299,13 +309,17 @@ private:
 protected:
   void getSpansFromBg(bool wait = false);
   void tryAndSendToFree(internal::FreeCmd *fCommand);
+  bool moveMiniHeapToNewFile(MiniHeap *mh, void *ptr);
+  void moveRemainPages();
   void dumpSpans();
   CheapHeap<64, kArenaSize / kPageSize> _mhAllocator{};
   MWC _fastPrng;
+  bool _isCOWRunning{false};
 
 private:
   Offset _end{};  // in pages
   Offset _lastFlushBegin{};
+  Offset _lastCOW{};
   // spans that had been meshed, have been freed, and need to be reset
   // to identity mappings in the page tables.
   internal::vector<Span> _toReset;
@@ -315,7 +329,7 @@ private:
 
   size_t _dirtyPageCount{0};
 
-  internal::RelaxedBitmap _meshedBitmap{
+  internal::RelaxedBitmap _cowBitmap{
       kArenaSize / kPageSize,
       reinterpret_cast<char *>(OneWayMmapHeap().malloc(bitmap::representationSize(kArenaSize / kPageSize))), false};
 
@@ -325,9 +339,11 @@ private:
   size_t _rssKbAtHWM{0};
   size_t _maxMeshCount{kDefaultMaxMeshCount};
 
-  int _fd;
-  int _forkPipe[2]{-1, -1};  // used for signaling during fork
+  int _fd{-1};
+  int _prefd{-1};
+
   char *_spanDir{nullptr};
+  char *_preSpanDir{nullptr};
 };
 }  // namespace mesh
 

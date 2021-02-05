@@ -249,13 +249,13 @@ public:
     return count;
   }
 
+  void clear() {
+    memset(_bits, 0, representationSize(bitCount()));
+  }
+
 protected:
   inline void nullBits() {
     _bits = nullptr;
-  }
-
-  void clear() {
-    memset(_bits, 0, representationSize(bitCount()));
   }
 
   inline size_t ATTRIBUTE_ALWAYS_INLINE bitCount() const {

@@ -129,6 +129,10 @@ public:
     return _freeThreadRunning;
   }
 
+  void setFreeThreadRunning(bool running) {
+    _freeThreadRunning = running;
+  }
+
 protected:
   bool jobFreeCmd();
   void autoFlush();

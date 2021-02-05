@@ -135,6 +135,7 @@ char *MeshableArena::openSpanDir(int pid) {
 }
 
 void MeshableArena::expandArena(size_t minPagesAdded) {
+  // debug("expandArena : %d, end=%d\n", minPagesAdded, _end);
   const size_t pageCount = std::max(minPagesAdded, kMinArenaExpansion);
 
   Span expansion(_end, pageCount);
@@ -182,6 +183,9 @@ void MeshableArena::expandArena(size_t minPagesAdded) {
   // debug("expandArena (minPagesAdded=%d) %d, %d,  dirty : %d\n", minPagesAdded, expansion.offset, expansion.length,
   // _dirtyPageCount);
 
+  if (_isCOWRunning) {
+    trackCOWed(expansion);
+  }
   _clean[expansion.spanClass()].push_back(expansion);
 }
 
@@ -587,7 +591,6 @@ void MeshableArena::scavenge(bool force) {
   // first, untrack the spans in the meshed bitmap and mark them in
   // the (method-local) unallocated bitmap
   std::for_each(_toReset.begin(), _toReset.end(), [&](const Span &span) {
-    untrackMeshed(span);
     markPages(span);
     // resetSpanMapping(span);
   });
@@ -678,7 +681,6 @@ void MeshableArena::finalizeMesh(void *keep, void *remove, size_t sz) {
 
   hard_assert(pageCount < std::numeric_limits<Length>::max());
   const Span removedSpan{removeOff, static_cast<Length>(pageCount)};
-  trackMeshed(removedSpan);
 
   void *ptr = mmap(remove, sz, HL_MMAP_PROTECTION_MASK, kMapShared | MAP_FIXED, _fd, keepOff * kPageSize);
   hard_assert_msg(ptr != MAP_FAILED, "mesh remap failed: %d", errno);
@@ -774,54 +776,75 @@ void MeshableArena::staticAfterForkChild() {
 }
 
 void MeshableArena::prepareForFork() {
-  if (!kMeshingEnabled) {
-    return;
-  }
-
-  // debug("%d: prepare fork", getpid());
   runtime().heap().lock();
   runtime().lock();
+
+  // block here until the COW is finished.
+  while (_isCOWRunning) {
+    moveRemainPages();
+  }
+
+  tryAndSendToFree(new internal::FreeCmd(internal::FreeCmd::FLUSH));
+  getSpansFromBg(true);
+
   internal::Heap().lock();
 
+  _isCOWRunning = true;
+
+  _preSpanDir = _spanDir;
+  _prefd = _fd;
+
+  _fd = openSpanFile(kArenaSize);
+
+  struct stat fileinfo;
+  memset(&fileinfo, 0, sizeof(fileinfo));
+  fstat(_fd, &fileinfo);
+  d_assert(fileinfo.st_size >= 0 && (size_t)fileinfo.st_size == kArenaSize);
+
+  // debug("%d: prepare fork", getpid());
   int r = mprotect(_arenaBegin, kArenaSize, PROT_READ);
   hard_assert(r == 0);
+}
 
-  int err = pipe(_forkPipe);
-  if (err == -1) {
-    abort();
+void MeshableArena::afterForkParentAndChild() {
+  // remap the large area, from end to the big end
+  size_t hasnt_use = kArenaSize - _end * kPageSize;
+  void *address = (void *)((size_t)_arenaBegin + _end * kPageSize);
+  size_t address_size = hasnt_use;
+  size_t address_offset = _end * kPageSize;
+
+  void *ptr = mmap(address, address_size, HL_MMAP_PROTECTION_MASK, kMapShared | MAP_FIXED, _fd, address_offset);
+  hard_assert_msg(ptr != MAP_FAILED, "map failed: %d, addr=%p, %u, %u", errno, address, address_size, address_offset);
+  debug("afterForkParentAndChild remap %d: errno=%d, addr=%p, %u, %u", getpid(), errno, address, address_size,
+        address_offset);
+
+  // remap all the clean spans
+  size_t count = 0;
+  for (size_t i = 0; i < kSpanClassCount; ++i) {
+    for (auto &span : _clean[i]) {
+      trackCOWed(span);
+      resetSpanMapping(span);
+      ++count;
+    }
   }
+
+  debug("afterForkParentAndChild %d: resetSpanMapping %u clean spans", getpid(), count);
+
+  count = 0;
+  for (size_t i = 0; i < kSpanClassCount; ++i) {
+    for (auto &span : _dirty[i]) {
+      trackCOWed(span);
+      resetSpanMapping(span);
+    }
+    ++count;
+  }
+  debug("afterForkParentAndChild %d: resetSpanMapping %u dirty spans", getpid(), count);
 }
 
 void MeshableArena::afterForkParent() {
-  if (!kMeshingEnabled) {
-    return;
-  }
+  afterForkParentAndChild();
 
   internal::Heap().unlock();
-
-  close(_forkPipe[1]);
-
-  char buf[8];
-  memset(buf, 0, 8);
-
-  // wait for our child to close + reopen memory.  Without this
-  // fence, we may experience memory corruption?
-
-  while (read(_forkPipe[0], buf, 4) == EAGAIN) {
-  }
-  close(_forkPipe[0]);
-
-  d_assert(strcmp(buf, "ok") == 0);
-
-  _forkPipe[0] = -1;
-  _forkPipe[1] = -1;
-
-  // only after the child has finished copying the heap is it safe to
-  // go back to read/write
-  int r = mprotect(_arenaBegin, kArenaSize, PROT_READ | PROT_WRITE);
-  hard_assert(r == 0);
-
-  // debug("%d: after fork parent", getpid());
   runtime().unlock();
   runtime().heap().unlock();
 }
@@ -832,99 +855,112 @@ void MeshableArena::doAfterForkChild() {
 
 void MeshableArena::afterForkChild() {
   runtime().updatePid();
+  debug("%d: after fork child", getpid());
 
-  if (!kMeshingEnabled) {
-    return;
-  }
+  runtime().setFreeThreadRunning(false);
 
-  // this function can get called twice
-  if (_forkPipe[0] == -1) {
-    return;
-  }
+  close(_fd);
 
-  // debug("%d: after fork child", getpid());
-  internal::Heap().unlock();
-  runtime().unlock();
-  runtime().heap().unlock();
-
-  close(_forkPipe[0]);
-
-  char *oldSpanDir = _spanDir;
-
-  // open new file for the arena
-  int newFd = openSpanFile(kArenaSize);
+  _fd = openSpanFile(kArenaSize);
 
   struct stat fileinfo;
   memset(&fileinfo, 0, sizeof(fileinfo));
-  fstat(newFd, &fileinfo);
+  fstat(_fd, &fileinfo);
   d_assert(fileinfo.st_size >= 0 && (size_t)fileinfo.st_size == kArenaSize);
 
-  const int oldFd = _fd;
+  internal::Heap().unlock();
 
-  const size_t end = _end * kPageSize;
-  int result = internal::copyFile(newFd, oldFd, 0, end);
-  d_assert(result >= 0);
+  afterForkParentAndChild();
 
-  while (write(_forkPipe[1], "ok", strlen("ok")) == EAGAIN) {
-  }
-
-  // remap the new region over the old
-  void *ptr = mmap(_arenaBegin, kArenaSize, HL_MMAP_PROTECTION_MASK, kMapShared | MAP_FIXED, newFd, 0);
-  hard_assert_msg(ptr != MAP_FAILED, "map failed: %d", errno);
-
-  if (kAdviseDump) {
-    madvise(_arenaBegin, kArenaSize, MADV_DONTDUMP | MADV_DONTFORK);
-  } else {
-    madvise(_arenaBegin, kArenaSize, MADV_DONTFORK);
-  }
-
-  // re-do the meshed mappings
-  {
-    internal::unordered_set<MiniHeap *> seenMiniheaps{};
-
-    for (auto const &i : _meshedBitmap) {
-      MiniHeap *mh = reinterpret_cast<MiniHeap *>(miniheapForArenaOffset(i));
-      if (mh) {
-        mh = mh->meshedLeader();
-      }
-      if (!mh || seenMiniheaps.find(mh) != seenMiniheaps.end()) {
-        continue;
-      }
-      seenMiniheaps.insert(mh);
-
-      const auto meshCount = mh->meshCount();
-      if (meshCount == 1) {
-        continue;
-      }
-
-      const auto sz = mh->spanSize();
-      const auto keep = reinterpret_cast<void *>(mh->getSpanStart(arenaBegin()));
-      const auto keepOff = offsetFor(keep);
-
-      const auto base = mh;
-      base->forEachMeshed([&](const MiniHeap *mh) {
-        if (!mh->isMeshed())
-          return false;
-
-        const auto remove = reinterpret_cast<void *>(mh->getSpanStart(arenaBegin()));
-
-        void *ptr = mmap(remove, sz, HL_MMAP_PROTECTION_MASK, kMapShared | MAP_FIXED, newFd, keepOff * kPageSize);
-
-        hard_assert_msg(ptr != MAP_FAILED, "mesh remap failed: %d", errno);
-
-        return false;
-      });
-    }
-  }
-
-  _fd = newFd;
-
-  internal::Heap().free(oldSpanDir);
-
-  close(oldFd);
-
-  close(_forkPipe[1]);
-  _forkPipe[0] = -1;
-  _forkPipe[1] = -1;
+  runtime().unlock();
+  runtime().heap().unlock();
 }
+
+bool MeshableArena::moveMiniHeapToNewFile(MiniHeap *mh, void *ptr) {
+  // debug("moveMiniHeapToNewFile %d: mh=%p  addr=%p\n", getpid(), mh, ptr);
+
+  MiniHeap *leader_mh = mh->meshedLeader();
+
+  if (leader_mh != nullptr) {
+    debug("moveMiniHeapToNewFile %d: mh=%p  leader == nullptr\n", getpid(), mh);
+  }
+
+  leader_mh = mh;
+
+  const auto sz = leader_mh->spanSize();
+  auto keep = reinterpret_cast<void *>(leader_mh->getSpanStart(arenaBegin()));
+  const auto keepOff = offsetFor(keep);
+
+  const auto &span = leader_mh->span();
+
+  // only copy the phys page once
+  for (size_t i = 0; i < span.length; ++i) {
+    hard_assert_msg(!_cowBitmap.isSet(span.offset + i),
+                    "moveMiniHeapToNewFile %d: already COW span offset=%u, length=%u", getpid(), span.offset + i,
+                    span.length);
+    d_assert(span.offset == keepOff);
+  }
+
+  // copy the phys pages to the new file
+  auto copyoff = keepOff * kPageSize;
+  auto copysize = span.length * kPageSize;
+  auto result = internal::copyFile(_fd, _prefd, copyoff, copysize);
+
+  hard_assert_msg((size_t)result == copysize, "internal::copyFile err rc=%d, %u, %u, %u, %u\n", result, _fd, _prefd,
+                  copyoff, copysize);
+
+  // redo all the mapping
+  const auto base = leader_mh;
+
+  base->forEachMeshed([&](MiniHeap *mh) {
+    trackCOWed(mh->span());
+
+    keep = reinterpret_cast<void *>(mh->getSpanStart(arenaBegin()));
+
+    void *remap_ptr = mmap(keep, sz, HL_MMAP_PROTECTION_MASK, kMapShared | MAP_FIXED, _fd, keepOff * kPageSize);
+
+    hard_assert_msg(remap_ptr != MAP_FAILED, "mesh remap failed: %d", errno);
+    // debug("moveMiniHeapToNewFile %d:  remap addr=%p, size=%d, mh=%p\n", getpid(), remap_ptr, sz, mh);
+    return false;
+  });
+
+  return true;
+}
+
+void MeshableArena::moveRemainPages() {
+  // debug("moveRemainPages checking : %u / %u", _lastCOW, _end);
+  auto check_begin = _lastCOW;
+
+  size_t off;
+  for (off = check_begin; off < check_begin + kMaxCOWPage && off < _end;) {
+    MiniHeap *mh = reinterpret_cast<MiniHeap *>(miniheapForArenaOffset(off));
+
+    if (_cowBitmap.isSet(off)) {
+      if (mh) {
+        off += mh->span().length;
+        continue;
+      }
+    } else {
+      if (mh) {
+        moveMiniHeapToNewFile(mh, nullptr);
+        off += mh->span().length;
+        continue;
+      }
+    }
+
+    ++off;
+  }
+
+  _lastCOW = off;
+
+  if (off >= _end) {
+    // debug("moveRemainPages finished");
+    _lastCOW = 0;
+    _isCOWRunning = false;
+    close(_prefd);
+    _prefd = -1;
+    _cowBitmap.clear();
+  }
+}
+
 }  // namespace mesh

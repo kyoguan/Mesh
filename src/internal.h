@@ -14,6 +14,7 @@
 
 #include <atomic>
 #include <unordered_set>
+#include <set>
 
 #include <signal.h>
 #include <stdint.h>
@@ -284,7 +285,7 @@ inline void *MaskToPage(const void *ptr) {
 }
 
 // efficiently copy data from srcFd to dstFd
-int copyFile(int dstFd, int srcFd, off_t off, size_t sz);
+ssize_t copyFile(int dstFd, int srcFd, off_t off, size_t sz);
 
 // for mesh-internal data structures, like heap metadata
 class Heap : public ExactlyOneHeap<LockedHeap<SpinLockType, PartitionedHeap>> {
@@ -317,6 +318,9 @@ using unordered_set = std::unordered_set<K, hash<K>, equal_to<K>, STLAllocator<K
 
 template <typename K, typename V>
 using map = std::map<K, V, std::less<K>, STLAllocator<pair<const K, V>, Heap>>;
+
+template <typename K>
+using set = std::set<K, std::less<K>, STLAllocator<K, Heap>>;
 
 typedef std::basic_string<char, std::char_traits<char>, STLAllocator<char, Heap>> string;
 

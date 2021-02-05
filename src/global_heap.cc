@@ -450,6 +450,10 @@ void GlobalHeap::meshAllSizeClassesLocked() {
   // debug("mesh took %f, found %zu", duration.count(), totalMeshCount);
 }
 
+void GlobalHeap::processCOWPage() {
+  Super::moveRemainPages();
+}
+
 void GlobalHeap::dumpStats(int level, bool beDetailed) const {
   if (level < 1)
     return;

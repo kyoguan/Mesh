@@ -75,6 +75,7 @@ static constexpr size_t kMaxFastLargeSize = 256 * 1024;  // 256Kb
 static constexpr size_t kMaxSplitListSize = 16384;
 static constexpr size_t kMaxMergeSets = 4096;
 
+static constexpr size_t kMaxCOWPage = 1000;
 // cutoff to be considered for meshing
 static constexpr double kOccupancyCutoff = .8;
 
@@ -121,7 +122,7 @@ static constexpr size_t kMaxMeshes = 256;  // 1 per bit
 #ifdef __APPLE__
 static constexpr size_t kArenaSize = 32ULL * 1024ULL * 1024ULL * 1024ULL;  // 16 GB
 #else
-static constexpr size_t kArenaSize = 128ULL * 1024ULL * 1024ULL * 1024ULL;  // 128 GB
+static constexpr size_t kArenaSize = 32ULL * 1024ULL * 1024ULL * 1024ULL;  // 128 GB
 #endif
 static constexpr size_t kAltStackSize = 16 * 1024UL;  // 16k sigaltstacks
 #define SIGQUIESCE (SIGRTMIN + 7)

@@ -90,7 +90,7 @@ inline void change_thread_name(const char *, int = -1) {
 }
 #endif
 
-int internal::copyFile(int dstFd, int srcFd, off_t off, size_t sz) {
+ssize_t internal::copyFile(int dstFd, int srcFd, off_t off, size_t sz) {
   d_assert(off >= 0);
 
   off_t newOff = lseek(dstFd, off, SEEK_SET);
@@ -103,7 +103,7 @@ int internal::copyFile(int dstFd, int srcFd, off_t off, size_t sz) {
 #else
   errno = 0;
   // sendfile will work with non-socket output (i.e. regular file) on Linux 2.6.33+
-  int result = sendfile(dstFd, srcFd, &off, sz);
+  ssize_t result = sendfile(dstFd, srcFd, &off, sz);
 #endif
 
   return result;
@@ -593,17 +593,22 @@ int Runtime::sigprocmask(int how, const sigset_t *set, sigset_t *oldset) {
 void Runtime::segfaultHandler(int sig, siginfo_t *siginfo, void *context) {
   if (runtime().pid() != getpid()) {
     // we are just after fork, and glibc sucks.
-    runtime().heap().doAfterForkChild();
-    if (siginfo->si_code == SEGV_MAPERR && runtime().heap().okToProceed(siginfo->si_addr)) {
-      return;
-    }
+    // runtime().heap().doAfterForkChild();
+    return;
   }
 
-  // okToProceed is a barrier that ensures any in-progress meshing has
-  // completed, and the reason for the fault was 'just' a meshing
-  if (siginfo->si_code == SEGV_ACCERR && runtime().heap().okToProceed(siginfo->si_addr)) {
-    // debug("TODO: trapped access violation from meshing, log stat\n");
-    return;
+  if (siginfo->si_code == SEGV_ACCERR) {
+    if (runtime().heap().isCOWRunning()) {
+      if (runtime().heap().tryCopyOnWrite(siginfo->si_addr)) {
+        return;
+      }
+    }
+    // okToProceed is a barrier that ensures any in-progress meshing has
+    // completed, and the reason for the fault was 'just' a meshing
+    else if (runtime().heap().okToProceed(siginfo->si_addr)) {
+      // debug("TODO: trapped access violation from meshing, log stat\n");
+      return;
+    }
   }
 
   struct sigaction *action = nullptr;
