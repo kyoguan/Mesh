@@ -143,13 +143,13 @@ public:
     if (kAdviseDump) {
       // only call madvise at a new page
       if ((uint64_t)ptr % kPageSize == 0) {
-        madvise(ptr, kPageSize, MADV_DODUMP | MADV_DONTFORK);
+        madvise(ptr, kPageSize, MADV_DODUMP);
         // debug("ptr -> madvise(%p, kPageSize, MADV_DODUMP) %d\n", ptr, (uint64_t)ptr % kPageSize);
       }
 
       void *freelistPage = _freelist + off * sizeof(void *);
       if ((uint64_t)freelistPage % kPageSize == 0) {
-        madvise(freelistPage, kPageSize, MADV_DODUMP | MADV_DONTFORK);
+        madvise(freelistPage, kPageSize, MADV_DODUMP);
         // debug("freelistPage -> madvise(%p, kPageSize, MADV_DODUMP) %d\n", freelistPage, (uint64_t)freelistPage %
         // kPageSize);
       }
