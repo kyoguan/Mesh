@@ -55,9 +55,7 @@ MeshableArena::MeshableArena() : SuperHeap(), _fastPrng(internal::seed(), intern
   hard_assert(_mhIndex != nullptr);
 
   if (kAdviseDump) {
-    madvise(_arenaBegin, kArenaSize, MADV_DONTDUMP | MADV_DONTFORK);
-  } else {
-    madvise(_arenaBegin, kArenaSize, MADV_DONTFORK);
+    madvise(_arenaBegin, kArenaSize, MADV_DONTDUMP);
   }
 
   // debug("MeshableArena(%p): fd:%4d\t%p-%p\n", this, fd, _arenaBegin, arenaEnd());
@@ -145,12 +143,6 @@ void MeshableArena::expandArena(size_t minPagesAdded) {
     debug("Mesh: arena exhausted: current arena size is %.1f GB; recompile with larger arena size.",
           kArenaSize / 1024.0 / 1024.0 / 1024.0);
     abort();
-  }
-
-  if (kAdviseDump) {
-    auto ptr = ptrFromOffset(expansion.offset);
-    auto sz = expansion.byteLength();
-    madvise(ptr, sz, MADV_DODUMP | MADV_DONTFORK);
   }
 
   // for(size_t i = 0; i < kSpanClassCount; ++i) {
@@ -819,9 +811,7 @@ void MeshableArena::afterForkParentAndChild() {
         address_offset);
 
   if (kAdviseDump) {
-    madvise(address, address_size, MADV_DONTDUMP | MADV_DONTFORK);
-  } else {
-    madvise(address, address_size, MADV_DONTFORK);
+    madvise(address, address_size, MADV_DONTDUMP);
   }
 
   // remap all the clean spans
