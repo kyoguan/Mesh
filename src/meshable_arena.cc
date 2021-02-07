@@ -894,9 +894,9 @@ bool MeshableArena::moveMiniHeapToNewFile(MiniHeap *mh, void *ptr) {
 
   if (leader_mh != nullptr) {
     debug("moveMiniHeapToNewFile %d: mh=%p  leader=%p\n", getpid(), mh, leader_mh);
+  } else {
+    leader_mh = mh;
   }
-
-  leader_mh = mh;
 
   const auto sz = leader_mh->spanSize();
   auto keep = reinterpret_cast<void *>(leader_mh->getSpanStart(arenaBegin()));
@@ -967,7 +967,7 @@ void MeshableArena::moveRemainPages() {
         moveMiniHeapToNewFile(mh, nullptr);
         off += mh->span().length;
       } else {
-        debug( "mh=nil, off=%u", off);
+        debug("mh=nil, off=%u", off);
         // hard_assert_msg(false, "mh=nil, off=%u", off);
         ++off;
       }
@@ -979,8 +979,8 @@ void MeshableArena::moveRemainPages() {
 
   if (off >= _COWend) {
     debug("moveRemainPages finished %u, %u, %u", off, _COWend, _end);
-    for(size_t i = 0; i<_COWend; ++i) {
-      if(!_cowBitmap.isSet(i)) {
+    for (size_t i = 0; i < _COWend; ++i) {
+      if (!_cowBitmap.isSet(i)) {
         debug("!_cowBitmap.isSet(i) i=%u", i);
       }
     }

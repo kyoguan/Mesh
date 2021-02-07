@@ -207,17 +207,17 @@ private:
       return;
     }
 
-    if (_isCOWRunning) {
-      trackCOWed(span);
-      resetSpanMapping(span);
-    }
-
     // this happens when we are trying to get an aligned allocation
     // and returning excess back to the arena
     if (flags == internal::PageType::Clean) {
       _clean[span.spanClass()].push_back(span);
       // moveBiggerTofirst(_clean[span.spanClass()]);
       return;
+    }
+
+    if (_isCOWRunning) {
+      trackCOWed(span);
+      resetSpanMapping(span);
     }
 
     clearIndex(span);
