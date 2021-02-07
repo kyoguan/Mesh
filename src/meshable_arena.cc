@@ -133,7 +133,7 @@ char *MeshableArena::openSpanDir(int pid) {
 }
 
 void MeshableArena::expandArena(size_t minPagesAdded) {
-  debug("expandArena : %d, end=%d\n", minPagesAdded, _end);
+  // debug("expandArena : %d, end=%d\n", minPagesAdded, _end);
   const size_t pageCount = std::max(minPagesAdded, kMinArenaExpansion);
 
   Span expansion(_end, pageCount);
@@ -179,7 +179,7 @@ void MeshableArena::expandArena(size_t minPagesAdded) {
     trackCOWed(expansion);
   }
   _clean[expansion.spanClass()].push_back(expansion);
-  debug("expandArena : %d, end=%d\n", minPagesAdded, _end);
+  // debug("expandArena : %d, end=%d\n", minPagesAdded, _end);
 }
 
 bool MeshableArena::findPagesInner(internal::vector<Span> freeSpans[kSpanClassCount], const size_t i,
@@ -967,8 +967,10 @@ void MeshableArena::moveRemainPages() {
         moveMiniHeapToNewFile(mh, nullptr);
         off += mh->span().length;
       } else {
+        #ifndef NDEBUG
         debug("mh=nil, off=%u", off);
         // hard_assert_msg(false, "mh=nil, off=%u", off);
+        #endif
         ++off;
       }
       continue;
@@ -978,6 +980,7 @@ void MeshableArena::moveRemainPages() {
   _lastCOW = off;
 
   if (off >= _COWend) {
+    #ifndef NDEBUG
     debug("moveRemainPages finished %u, %u, %u", off, _COWend, _end);
     for (size_t i = 0; i < _COWend; ++i) {
       if (!_cowBitmap.isSet(i)) {
@@ -985,6 +988,7 @@ void MeshableArena::moveRemainPages() {
       }
     }
     debug("moveRemainPages finished %u, %u, %u", off, _COWend, _end);
+    #endif
     _lastCOW = 0;
     _COWend = 0;
     _isCOWRunning = false;
