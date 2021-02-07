@@ -49,8 +49,11 @@
 // against libstdc++ with _GLIBCXX_HAVE_TLS defined. (this check is from Abseil)
 #ifdef MESH_HAVE_TLS
 #error MESH_HAVE_TLS cannot be directly set
-#elif defined(__linux__) && (defined(__clang__) || defined(_GLIBCXX_HAVE_TLS))
+#endif
+#if defined(__linux__) && (defined(__clang__) || defined(_GLIBCXX_HAVE_TLS))
 #define MESH_HAVE_TLS 1
+#else
+#undef MESH_HAVE_TLS
 #endif
 
 namespace mesh {
