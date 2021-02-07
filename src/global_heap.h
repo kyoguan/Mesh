@@ -484,14 +484,6 @@ public:
       return;
     }
 
-    if (_meshPeriod == 0) {
-      return;
-    }
-
-    if (_meshPeriodMs == kZeroMs) {
-      return;
-    }
-
     const auto now = time::now();
     auto duration = chrono::duration_cast<chrono::milliseconds>(now - _lastMesh);
 
@@ -517,9 +509,18 @@ public:
 
     if (_isCOWRunning) {
       processCOWPage();
-    } else {
-      meshAllSizeClassesLocked();
+      return;
     }
+
+    if (_meshPeriod == 0) {
+      return;
+    }
+
+    if (_meshPeriodMs == kZeroMs) {
+      return;
+    }
+
+    meshAllSizeClassesLocked();
   }
 
   inline bool okToProceed(void *ptr) const {
@@ -528,8 +529,8 @@ public:
     }
 
     lock_guard<mutex> lock(_miniheapLock);
-
-    return miniheapFor(ptr) != nullptr;
+    auto mh = miniheapFor(ptr);
+    return mh != nullptr;
   }
 
   inline bool tryCopyOnWrite(void *ptr) {

@@ -318,6 +318,7 @@ protected:
 
 private:
   Offset _end{};  // in pages
+  Offset _COWend{};
   Offset _lastFlushBegin{};
   Offset _lastCOW{};
   // spans that had been meshed, have been freed, and need to be reset

@@ -133,7 +133,7 @@ char *MeshableArena::openSpanDir(int pid) {
 }
 
 void MeshableArena::expandArena(size_t minPagesAdded) {
-  // debug("expandArena : %d, end=%d\n", minPagesAdded, _end);
+  debug("expandArena : %d, end=%d\n", minPagesAdded, _end);
   const size_t pageCount = std::max(minPagesAdded, kMinArenaExpansion);
 
   Span expansion(_end, pageCount);
@@ -179,6 +179,7 @@ void MeshableArena::expandArena(size_t minPagesAdded) {
     trackCOWed(expansion);
   }
   _clean[expansion.spanClass()].push_back(expansion);
+  debug("expandArena : %d, end=%d\n", minPagesAdded, _end);
 }
 
 bool MeshableArena::findPagesInner(internal::vector<Span> freeSpans[kSpanClassCount], const size_t i,
@@ -804,6 +805,7 @@ void MeshableArena::afterForkParentAndChild() {
   void *address = (void *)((size_t)_arenaBegin + _end * kPageSize);
   size_t address_size = hasnt_use;
   size_t address_offset = _end * kPageSize;
+  _COWend = _end;
 
   void *ptr = mmap(address, address_size, HL_MMAP_PROTECTION_MASK, kMapShared | MAP_FIXED, _fd, address_offset);
   hard_assert_msg(ptr == address, "map failed: %d, addr=%p, %u, %u", errno, address, address_size, address_offset);
@@ -813,6 +815,9 @@ void MeshableArena::afterForkParentAndChild() {
   if (kAdviseDump) {
     madvise(address, address_size, MADV_DONTDUMP);
   }
+
+  tryAndSendToFree(new internal::FreeCmd(internal::FreeCmd::FLUSH));
+  getSpansFromBg(true);
 
   // remap all the clean spans
   size_t count = 0;
@@ -835,12 +840,22 @@ void MeshableArena::afterForkParentAndChild() {
     ++count;
   }
   debug("afterForkParentAndChild %d: resetSpanMapping %u dirty spans", getpid(), count);
+
+  count = 0;
+  for (auto &span : _toReset) {
+    trackCOWed(span);
+    resetSpanMapping(span);
+    ++count;
+  }
+
+  debug("afterForkParentAndChild %d: resetSpanMapping %u _toReset spans", getpid(), count);
 }
 
 void MeshableArena::afterForkParent() {
+  internal::Heap().unlock();
+
   afterForkParentAndChild();
 
-  internal::Heap().unlock();
   runtime().unlock();
   runtime().heap().unlock();
 }
@@ -928,34 +943,50 @@ bool MeshableArena::moveMiniHeapToNewFile(MiniHeap *mh, void *ptr) {
 }
 
 void MeshableArena::moveRemainPages() {
-  // debug("moveRemainPages checking : %u / %u", _lastCOW, _end);
+  debug("moveRemainPages checking : %u / %u, %u", _lastCOW, _COWend, _end);
   auto check_begin = _lastCOW;
 
   size_t off;
-  for (off = check_begin; off < check_begin + kMaxCOWPage && off < _end;) {
+  for (off = check_begin; off < check_begin + kMaxCOWPage && off < _COWend;) {
     MiniHeap *mh = reinterpret_cast<MiniHeap *>(miniheapForArenaOffset(off));
 
     if (_cowBitmap.isSet(off)) {
       if (mh) {
+#ifndef NDEBUG
+        for (auto i = off; i < mh->span().length; ++i) {
+          d_assert(_cowBitmap.isSet(off));
+        }
+#endif
         off += mh->span().length;
-        continue;
+      } else {
+        ++off;
       }
+      continue;
     } else {
       if (mh) {
         moveMiniHeapToNewFile(mh, nullptr);
         off += mh->span().length;
-        continue;
+      } else {
+        debug( "mh=nil, off=%u", off);
+        // hard_assert_msg(false, "mh=nil, off=%u", off);
+        ++off;
       }
+      continue;
     }
-
-    ++off;
   }
 
   _lastCOW = off;
 
-  if (off >= _end) {
-    // debug("moveRemainPages finished");
+  if (off >= _COWend) {
+    debug("moveRemainPages finished %u, %u, %u", off, _COWend, _end);
+    for(size_t i = 0; i<_COWend; ++i) {
+      if(!_cowBitmap.isSet(i)) {
+        debug("!_cowBitmap.isSet(i) i=%u", i);
+      }
+    }
+    debug("moveRemainPages finished %u, %u, %u", off, _COWend, _end);
     _lastCOW = 0;
+    _COWend = 0;
     _isCOWRunning = false;
     close(_prefd);
     _prefd = -1;
