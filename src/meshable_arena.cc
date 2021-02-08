@@ -177,6 +177,7 @@ void MeshableArena::expandArena(size_t minPagesAdded) {
 
   if (_isCOWRunning) {
     trackCOWed(expansion);
+    resetSpanMapping(expansion);
   }
   _clean[expansion.spanClass()].push_back(expansion);
   // debug("expandArena : %d, end=%d\n", minPagesAdded, _end);
@@ -476,6 +477,13 @@ void MeshableArena::getSpansFromBg(bool wait) {
       // all add to the mark spans
       if (preCommand->cmd == internal::FreeCmd::FLUSH) {
         for (auto &s : preCommand->spans) {
+#ifndef NDEBUG
+          if (_isCOWRunning) {
+            for (auto i = s.offset; i < s.length; ++i) {
+              d_assert(_cowBitmap.isSet(s.offset));
+            }
+          }
+#endif
           _clean[s.spanClass()].emplace_back(s);
           pageCount += s.length;
         }
@@ -668,12 +676,12 @@ void MeshableArena::beginMesh(void *keep, void *remove, size_t sz) {
 void MeshableArena::finalizeMesh(void *keep, void *remove, size_t sz) {
   // debug("keep: %p, remove: %p\n", keep, remove);
   const auto keepOff = offsetFor(keep);
-  const auto removeOff = offsetFor(remove);
+  // const auto removeOff = offsetFor(remove);
 
   const size_t pageCount = sz / kPageSize;
 
   hard_assert(pageCount < std::numeric_limits<Length>::max());
-  const Span removedSpan{removeOff, static_cast<Length>(pageCount)};
+  // const Span removedSpan{removeOff, static_cast<Length>(pageCount)};
 
   void *ptr = mmap(remove, sz, HL_MMAP_PROTECTION_MASK, kMapShared | MAP_FIXED, _fd, keepOff * kPageSize);
   hard_assert_msg(ptr != MAP_FAILED, "mesh remap failed: %d", errno);
@@ -783,6 +791,7 @@ void MeshableArena::prepareForFork() {
   internal::Heap().lock();
 
   _isCOWRunning = true;
+  hard_assert(_lastCOW == 0);
 
   _preSpanDir = _spanDir;
   _prefd = _fd;
@@ -866,7 +875,7 @@ void MeshableArena::doAfterForkChild() {
 
 void MeshableArena::afterForkChild() {
   runtime().updatePid();
-  debug("%d: after fork child", getpid());
+  debug("afterForkChild pid=%u", getpid());
 
   runtime().setFreeThreadRunning(false);
 
@@ -948,6 +957,7 @@ void MeshableArena::moveRemainPages() {
 
   size_t off;
   for (off = check_begin; off < check_begin + kMaxCOWPage && off < _COWend;) {
+    d_assert(off != _COWend);
     MiniHeap *mh = reinterpret_cast<MiniHeap *>(miniheapForArenaOffset(off));
 
     if (_cowBitmap.isSet(off)) {
@@ -957,6 +967,9 @@ void MeshableArena::moveRemainPages() {
           d_assert(_cowBitmap.isSet(off));
         }
 #endif
+        MiniHeap *leader_mh = mh->meshedLeader();
+        d_assert_msg(mh->span().offset <= off && off < mh->span().offset + mh->span().length,
+                     "mh->span(%u, %u)  off=%u  leader=%p", mh->span().offset, mh->span().length, off, leader_mh);
         off += mh->span().length;
       } else {
         ++off;
@@ -965,13 +978,51 @@ void MeshableArena::moveRemainPages() {
     } else {
       if (mh) {
         moveMiniHeapToNewFile(mh, nullptr);
+        d_assert(_cowBitmap.isSet(off));
+        d_assert(off == mh->span().offset);
         off += mh->span().length;
       } else {
-        #ifndef NDEBUG
-        debug("mh=nil, off=%u", off);
-        // hard_assert_msg(false, "mh=nil, off=%u", off);
-        #endif
-        ++off;
+        tryAndSendToFree(new internal::FreeCmd(internal::FreeCmd::FLUSH));
+        getSpansFromBg(true);
+
+        bool found = false;
+        Offset slen = 0;
+        for (size_t i = 0; i < kSpanClassCount; ++i) {
+          for (auto &span : _clean[i]) {
+            if (span.offset == off) {
+              found = true;
+              slen = span.length;
+              trackCOWed(span);
+              resetSpanMapping(span);
+              debug("found in _clean len=%u", slen);
+            }
+          }
+        }
+
+        for (size_t i = 0; i < kSpanClassCount; ++i) {
+          for (auto &span : _dirty[i]) {
+            if (span.offset == off) {
+              found = true;
+              slen = span.length;
+              trackCOWed(span);
+              resetSpanMapping(span);
+              debug("found in _dirty len=%u", slen);
+            }
+          }
+        }
+
+        for (auto &span : _toReset) {
+          if (span.offset == off) {
+            found = true;
+            slen = span.length;
+            trackCOWed(span);
+            resetSpanMapping(span);
+            debug("found in _toReset len=%u", slen);
+          }
+        }
+        d_assert(found);
+
+        off += slen;
       }
       continue;
     }
@@ -980,15 +1031,53 @@ void MeshableArena::moveRemainPages() {
   _lastCOW = off;
 
   if (off >= _COWend) {
-    #ifndef NDEBUG
+#ifndef NDEBUG
     debug("moveRemainPages finished %u, %u, %u", off, _COWend, _end);
-    for (size_t i = 0; i < _COWend; ++i) {
-      if (!_cowBitmap.isSet(i)) {
-        debug("!_cowBitmap.isSet(i) i=%u", i);
+    for (size_t j = 0; j < _COWend; ++j) {
+      if (!_cowBitmap.isSet(j)) {
+        tryAndSendToFree(new internal::FreeCmd(internal::FreeCmd::FLUSH));
+        getSpansFromBg(true);
+
+        bool found = false;
+        Offset slen = 0;
+        for (size_t i = 0; i < kSpanClassCount; ++i) {
+          for (auto &span : _clean[i]) {
+            if (span.offset == off) {
+              found = true;
+              slen = span.length;
+              debug("found in _clean len=%u", slen);
+            }
+          }
+        }
+
+        for (size_t i = 0; i < kSpanClassCount; ++i) {
+          for (auto &span : _dirty[i]) {
+            if (span.offset == off) {
+              found = true;
+              slen = span.length;
+              debug("found in _dirty len=%u", slen);
+            }
+          }
+        }
+
+        for (auto &span : _toReset) {
+          if (span.offset == off) {
+            found = true;
+            slen = span.length;
+            debug("found in _toReset len=%u", slen);
+          }
+        }
+        if (!found) {
+          _lastCOW = j;
+          d_assert_msg(false, "not found off= %u", j);
+          return;
+        }
+        j += slen;
       }
     }
     debug("moveRemainPages finished %u, %u, %u", off, _COWend, _end);
-    #endif
+#endif
+
     _lastCOW = 0;
     _COWend = 0;
     _isCOWRunning = false;

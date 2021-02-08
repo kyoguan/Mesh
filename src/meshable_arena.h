@@ -212,21 +212,20 @@ private:
     if (flags == internal::PageType::Clean) {
       _clean[span.spanClass()].push_back(span);
       // moveBiggerTofirst(_clean[span.spanClass()]);
+      d_assert(_cowBitmap.isSet(span.offset));
       return;
-    }
-
-    if (_isCOWRunning) {
-      trackCOWed(span);
-      resetSpanMapping(span);
     }
 
     clearIndex(span);
 
     if (flags == internal::PageType::Dirty) {
-      // if (kAdviseDump) {
-      //   madvise(ptrFromOffset(span.offset), span.length * kPageSize, MADV_DONTDUMP);
-      // }
       d_assert(span.length > 0);
+
+      if (_isCOWRunning) {
+        trackCOWed(span);
+        resetSpanMapping(span);
+      }
+
       _dirty[span.spanClass()].push_back(span);
       // moveBiggerTofirst(_dirty[span.spanClass()]);
       _dirtyPageCount += span.length;
@@ -282,21 +281,6 @@ private:
     }
   }
 
-  inline void trackCOWed(const Span &span) {
-    for (size_t i = 0; i < span.length; i++) {
-      // this may already be 1 if it was a meshed virtual span that is
-      // now being re-meshed to a new owning miniheap
-      _cowBitmap.tryToSet(span.offset + i);
-    }
-  }
-
-  inline void untrackCOWed(const Span &span) {
-    for (size_t i = 0; i < span.length; i++) {
-      d_assert(_cowBitmap.isSet(span.offset + i));
-      _cowBitmap.unset(span.offset + i);
-    }
-  }
-
   void prepareForFork();
   void afterForkParent();
   void afterForkChild();
@@ -307,6 +291,13 @@ private:
   atomic<MiniHeapID> *_mhIndex{nullptr};
 
 protected:
+  inline void trackCOWed(const Span &span) {
+    for (size_t i = 0; i < span.length; i++) {
+      // this may already be 1 if it was a meshed virtual span that is
+      // now being re-meshed to a new owning miniheap
+      _cowBitmap.tryToSet(span.offset + i);
+    }
+  }
   void getSpansFromBg(bool wait = false);
   void tryAndSendToFree(internal::FreeCmd *fCommand);
   bool moveMiniHeapToNewFile(MiniHeap *mh, void *ptr);
