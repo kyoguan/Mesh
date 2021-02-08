@@ -267,9 +267,10 @@ void GlobalHeap::meshLocked(MiniHeap *dst, MiniHeap *&src, internal::vector<Span
     }
     const auto srcSpan = reinterpret_cast<void *>(mh->getSpanStart(arenaBegin()));
     // frees physical memory + re-marks srcSpans as read/write
-    if (isCOWRunning()) {
-      Super::trackCOWed(mh->span());
-    }
+    hard_assert(!isCOWRunning());
+    // if (isCOWRunning()) {
+    //   Super::trackCOWed(mh->span());
+    // }
 
     Super::finalizeMesh(dstSpanStart, srcSpan, dstSpanSize);
     return false;

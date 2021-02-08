@@ -1069,7 +1069,7 @@ void MeshableArena::moveRemainPages() {
         }
         if (!found) {
           _lastCOW = j;
-          d_assert_msg(false, "not found off= %u", j);
+          // d_assert_msg(false, "not found off= %u", j);
           return;
         }
         j += slen;
