@@ -20,10 +20,12 @@ namespace mesh {
 namespace real {
 #ifdef __linux__
 DEFINE_REAL(epoll_pwait);
-DEFINE_REAL(epoll_wait);
+#endif
+
+DEFINE_REAL(read);
+DEFINE_REAL(getcwd);
 DEFINE_REAL(recv);
 DEFINE_REAL(recvmsg);
-#endif
 
 DEFINE_REAL(pthread_create);
 DEFINE_REAL(pthread_exit);
@@ -39,12 +41,15 @@ void init() {
   if (initialized)
     return;
   initialized = true;
+  INIT_REAL(read, RTLD_NEXT);
+  INIT_REAL(getcwd, RTLD_NEXT);
+
 #ifdef __linux__
   INIT_REAL(epoll_pwait, RTLD_NEXT);
-  INIT_REAL(epoll_wait, RTLD_NEXT);
+#endif
+
   INIT_REAL(recv, RTLD_NEXT);
   INIT_REAL(recvmsg, RTLD_NEXT);
-#endif
 
   INIT_REAL(pthread_create, RTLD_NEXT);
   INIT_REAL(pthread_exit, RTLD_NEXT);
@@ -52,5 +57,6 @@ void init() {
   INIT_REAL(sigaction, RTLD_NEXT);
   INIT_REAL(sigprocmask, RTLD_NEXT);
 }
+
 }  // namespace real
 }  // namespace mesh

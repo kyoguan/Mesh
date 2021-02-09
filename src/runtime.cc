@@ -259,7 +259,7 @@ void *Runtime::bgThread(void *arg) {
   while (true) {
     struct signalfd_siginfo siginfo;
 
-    ssize_t s = read(rt._signalFd, &siginfo, sizeof(struct signalfd_siginfo));
+    ssize_t s = ::read(rt._signalFd, &siginfo, sizeof(struct signalfd_siginfo));
     if (s != sizeof(struct signalfd_siginfo)) {
       if (s >= 0) {
         debug("bad read size: %lld\n", s);
@@ -494,16 +494,6 @@ void Runtime::unlock() {
   _mutex.unlock();
 }
 
-#if __linux__
-int Runtime::epollWait(int __epfd, struct epoll_event *__events, int __maxevents, int __timeout) {
-  if (unlikely(mesh::real::epoll_wait == nullptr))
-    mesh::real::init();
-
-  _heap.maybeMesh();
-
-  return mesh::real::epoll_wait(__epfd, __events, __maxevents, __timeout);
-}
-
 int Runtime::epollPwait(int __epfd, struct epoll_event *__events, int __maxevents, int __timeout,
                         const __sigset_t *__ss) {
   if (unlikely(mesh::real::epoll_pwait == nullptr))
@@ -541,8 +531,6 @@ ssize_t Runtime::recvmsg(int sockfd, struct msghdr *msg, int flags) {
   }
   return ret;
 }
-
-#endif
 
 static struct sigaction sigbusAction;
 static struct sigaction sigsegvAction;

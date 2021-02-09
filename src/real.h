@@ -24,10 +24,12 @@ void init();
 
 #ifdef __linux__
 DECLARE_REAL(epoll_pwait);
-DECLARE_REAL(epoll_wait);
+#endif
+
+DECLARE_REAL(read);
+DECLARE_REAL(getcwd);
 DECLARE_REAL(recv);
 DECLARE_REAL(recvmsg);
-#endif
 
 DECLARE_REAL(pthread_create);
 DECLARE_REAL(pthread_exit);

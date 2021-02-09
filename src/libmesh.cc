@@ -4,7 +4,7 @@
 // Version 2.0, that can be found in the LICENSE file.
 
 #include <stdlib.h>
-
+#include <unistd.h>
 #include "runtime.h"
 #include "thread_local_heap.h"
 
@@ -225,26 +225,45 @@ int MESH_EXPORT mesh_mallctl(const char *name, void *oldp, size_t *oldlenp, void
 
 #if 0  //__linux__
 
-int MESH_EXPORT epoll_wait(int __epfd, struct epoll_event *__events, int __maxevents, int __timeout) {
-  return mesh::runtime().epollWait(__epfd, __events, __maxevents, __timeout);
-}
-
 int MESH_EXPORT epoll_pwait(int __epfd, struct epoll_event *__events, int __maxevents, int __timeout,
                             const __sigset_t *__ss) {
   return mesh::runtime().epollPwait(__epfd, __events, __maxevents, __timeout, __ss);
 }
-
 #endif
-#if __linux__
+
+ssize_t MESH_EXPORT read(int fd, void *buf, size_t count) {
+  if (unlikely(mesh::real::read == nullptr))
+    mesh::real::init();
+
+  *((char *)buf) = 0;
+
+  return mesh::real::read(fd, buf, count);
+}
+
+char *MESH_EXPORT getcwd(char *buf, size_t size) {
+  if (unlikely(mesh::real::getcwd == nullptr))
+    mesh::real::init();
+
+  *((char *)buf) = 0;
+
+  return mesh::real::getcwd(buf, size);
+}
 
 ssize_t MESH_EXPORT recv(int sockfd, void *buf, size_t len, int flags) {
-  return mesh::runtime().recv(sockfd, buf, len, flags);
+  *((char *)buf) = 0;
+  return mesh::real::recv(sockfd, buf, len, flags);
 }
 
 ssize_t MESH_EXPORT recvmsg(int sockfd, struct msghdr *msg, int flags) {
-  return mesh::runtime().recvmsg(sockfd, msg, flags);
+  for (size_t i = 0; i < msg->msg_iovlen; ++i) {
+    auto ptr = msg->msg_iov[i].iov_base;
+    if (ptr) {
+      *(char *)ptr = 0;
+    }
+  }
+
+  return mesh::real::recvmsg(sockfd, msg, flags);
 }
-#endif
 }
 
 #if defined(__linux__)

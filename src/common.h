@@ -282,7 +282,7 @@ inline mt19937_64 *initSeed() {
   // seed this Mersenne Twister PRNG with entropy from the host OS
   int fd = open("/dev/urandom", O_RDONLY);
   unsigned long buf;
-  auto sz = read(fd, (void *)&buf, sizeof(unsigned long));
+  auto sz = pread(fd, (void *)&buf, sizeof(unsigned long), 0);
   hard_assert(sz == sizeof(unsigned long));
   close(fd);
   //  std::random_device rd;
@@ -293,8 +293,9 @@ inline mt19937_64 *initSeed() {
 // cryptographically-strong thread-safe PRNG seed
 inline uint64_t seed() {
   static mt19937_64 *mt = NULL;
+  static mutex *m = getSeedMutex();
 
-  lock_guard<mutex> lock(*getSeedMutex());
+  lock_guard<mutex> lock(*m);
 
   if (unlikely(mt == nullptr))
     mt = initSeed();
