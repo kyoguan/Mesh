@@ -10,6 +10,7 @@
 #include <sys/epoll.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <stdio.h>
 #endif
 
 #pragma once
@@ -27,6 +28,7 @@ DECLARE_REAL(epoll_pwait);
 #endif
 
 DECLARE_REAL(read);
+DECLARE_REAL(fread);
 DECLARE_REAL(getcwd);
 DECLARE_REAL(recv);
 DECLARE_REAL(recvmsg);

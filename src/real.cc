@@ -23,6 +23,7 @@ DEFINE_REAL(epoll_pwait);
 #endif
 
 DEFINE_REAL(read);
+DEFINE_REAL(fread);
 DEFINE_REAL(getcwd);
 DEFINE_REAL(recv);
 DEFINE_REAL(recvmsg);
@@ -42,6 +43,7 @@ void init() {
     return;
   initialized = true;
   INIT_REAL(read, RTLD_NEXT);
+  INIT_REAL(fread, RTLD_NEXT);
   INIT_REAL(getcwd, RTLD_NEXT);
 
 #ifdef __linux__

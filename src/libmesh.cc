@@ -240,6 +240,19 @@ ssize_t MESH_EXPORT read(int fd, void *buf, size_t count) {
   return mesh::real::read(fd, buf, count);
 }
 
+size_t MESH_EXPORT fread(void *ptr, size_t size, size_t nmemb, FILE *stream) {
+  if (unlikely(mesh::real::fread == nullptr))
+    mesh::real::init();
+
+  if (stream->_IO_buf_base) {
+    volatile char c = *(stream->_IO_buf_base);
+    *(stream->_IO_buf_base) = c;
+    // debug("_IO_buf_base=%p", stream->_IO_buf_base);
+  }
+
+  return mesh::real::fread(ptr, size, nmemb, stream);
+}
+
 char *MESH_EXPORT getcwd(char *buf, size_t size) {
   if (unlikely(mesh::real::getcwd == nullptr))
     mesh::real::init();
