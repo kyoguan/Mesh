@@ -77,7 +77,7 @@ inline void *touch_fast(void *addr) {
 ATTRIBUTE_NEVER_INLINE
 static void *allocSlowpath(size_t sz) {
   ThreadLocalHeap *localHeap = ThreadLocalHeap::GetHeap();
-  return touch_addr(localHeap->malloc(sz));
+  return touch_fast(localHeap->malloc(sz));
 }
 
 ATTRIBUTE_NEVER_INLINE
