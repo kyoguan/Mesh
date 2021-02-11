@@ -231,12 +231,18 @@ int MESH_EXPORT epoll_pwait(int __epfd, struct epoll_event *__events, int __maxe
 }
 #endif
 
+inline void touch_addr(void *addr) {
+  if (addr) {
+    volatile char c = *((char *)addr);
+    *((char *)addr) = c;
+  }
+}
+
 ssize_t MESH_EXPORT read(int fd, void *buf, size_t count) {
   if (unlikely(mesh::real::read == nullptr))
     mesh::real::init();
 
-  *((char *)buf) = 0;
-
+  touch_addr(buf);
   return mesh::real::read(fd, buf, count);
 }
 
@@ -244,12 +250,8 @@ size_t MESH_EXPORT fread(void *ptr, size_t size, size_t nmemb, FILE *stream) {
   if (unlikely(mesh::real::fread == nullptr))
     mesh::real::init();
 
-  if (stream->_IO_buf_base) {
-    volatile char c = *(stream->_IO_buf_base);
-    *(stream->_IO_buf_base) = c;
-    // debug("_IO_buf_base=%p", stream->_IO_buf_base);
-  }
-
+  touch_addr(ptr);
+  touch_addr(stream->_IO_buf_base);
   return mesh::real::fread(ptr, size, nmemb, stream);
 }
 
@@ -257,13 +259,12 @@ char *MESH_EXPORT getcwd(char *buf, size_t size) {
   if (unlikely(mesh::real::getcwd == nullptr))
     mesh::real::init();
 
-  *((char *)buf) = 0;
-
+  touch_addr(buf);
   return mesh::real::getcwd(buf, size);
 }
 
 ssize_t MESH_EXPORT recv(int sockfd, void *buf, size_t len, int flags) {
-  *((char *)buf) = 0;
+  touch_addr(buf);
   return mesh::real::recv(sockfd, buf, len, flags);
 }
 
@@ -271,7 +272,7 @@ ssize_t MESH_EXPORT recvmsg(int sockfd, struct msghdr *msg, int flags) {
   for (size_t i = 0; i < msg->msg_iovlen; ++i) {
     auto ptr = msg->msg_iov[i].iov_base;
     if (ptr) {
-      *(char *)ptr = 0;
+      touch_addr(ptr);
     }
   }
 
