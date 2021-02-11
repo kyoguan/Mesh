@@ -58,10 +58,26 @@ static __attribute__((destructor)) void libmesh_fini() {
 }
 
 namespace mesh {
+
+inline void *touch_addr(void *addr) {
+  if (addr) {
+    volatile char c = *((char *)addr);
+    *((char *)addr) = c;
+  }
+  return addr;
+}
+
+inline void *touch_fast(void *addr) {
+  if (addr) {
+    *((char *)addr) = 0;
+  }
+  return addr;
+}
+
 ATTRIBUTE_NEVER_INLINE
 static void *allocSlowpath(size_t sz) {
   ThreadLocalHeap *localHeap = ThreadLocalHeap::GetHeap();
-  return localHeap->malloc(sz);
+  return touch_addr(localHeap->malloc(sz));
 }
 
 ATTRIBUTE_NEVER_INLINE
@@ -98,17 +114,17 @@ static size_t usableSizeSlowpath(void *ptr) {
 ATTRIBUTE_NEVER_INLINE
 static void *memalignSlowpath(size_t alignment, size_t size) {
   ThreadLocalHeap *localHeap = ThreadLocalHeap::GetHeap();
-  return localHeap->memalign(alignment, size);
+  return touch_fast(localHeap->memalign(alignment, size));
 }
 }  // namespace mesh
 
 extern "C" MESH_EXPORT CACHELINE_ALIGNED_FN void *mesh_malloc(size_t sz) {
   ThreadLocalHeap *localHeap = ThreadLocalHeap::GetHeapIfPresent();
   if (unlikely(localHeap == nullptr)) {
-    return mesh::allocSlowpath(sz);
+    return touch_fast(mesh::allocSlowpath(sz));
   }
 
-  return localHeap->malloc(sz);
+  return touch_fast(localHeap->malloc(sz));
 }
 #define xxmalloc mesh_malloc
 
@@ -159,10 +175,10 @@ extern "C" MESH_EXPORT CACHELINE_ALIGNED_FN void *mesh_memalign(size_t alignment
 {
   ThreadLocalHeap *localHeap = ThreadLocalHeap::GetHeapIfPresent();
   if (unlikely(localHeap == nullptr)) {
-    return mesh::memalignSlowpath(alignment, size);
+    return touch_fast(mesh::memalignSlowpath(alignment, size));
   }
 
-  return localHeap->memalign(alignment, size);
+  return touch_fast(localHeap->memalign(alignment, size));
 }
 
 extern "C" MESH_EXPORT CACHELINE_ALIGNED_FN void *mesh_calloc(size_t count, size_t size) {
@@ -231,13 +247,6 @@ int MESH_EXPORT epoll_pwait(int __epfd, struct epoll_event *__events, int __maxe
 }
 #endif
 
-inline void touch_addr(void *addr) {
-  if (addr) {
-    volatile char c = *((char *)addr);
-    *((char *)addr) = c;
-  }
-}
-
 ssize_t MESH_EXPORT read(int fd, void *buf, size_t count) {
   if (unlikely(mesh::real::read == nullptr))
     mesh::real::init();
@@ -249,6 +258,8 @@ ssize_t MESH_EXPORT read(int fd, void *buf, size_t count) {
 size_t MESH_EXPORT fread(void *ptr, size_t size, size_t nmemb, FILE *stream) {
   if (unlikely(mesh::real::fread == nullptr))
     mesh::real::init();
+
+  // debug("ptr=%p  _IO_buf_base=%p", ptr, stream->_IO_buf_base);
 
   touch_addr(ptr);
   touch_addr(stream->_IO_buf_base);
