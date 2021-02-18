@@ -394,7 +394,7 @@ public:
     MiniHeap *toFree[kMaxMeshes];
     size_t last = 0;
 
-    memset(toFree, 0, sizeof(*toFree) * kMaxMeshes);
+    // memset(toFree, 0, sizeof(*toFree) * kMaxMeshes);
 
     // avoid use after frees while freeing
     mh->forEachMeshed([&](MiniHeap *mh) {
@@ -410,7 +410,7 @@ public:
       }
       const auto type = isMeshed ? internal::PageType::Meshed : internal::PageType::Dirty;
       Super::free(reinterpret_cast<void *>(mh->getSpanStart(arenaBegin())), spanSize, type);
-      _stats.mhFreeCount++;
+      ++_stats.mhFreeCount;
       freeMiniheapAfterMeshLocked(mh, untrack);
     }
 
