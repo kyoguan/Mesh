@@ -818,8 +818,10 @@ void MeshableArena::afterForkParentAndChild() {
 
   void *ptr = mmap(address, address_size, HL_MMAP_PROTECTION_MASK, kMapShared | MAP_FIXED, _fd, address_offset);
   hard_assert_msg(ptr == address, "map failed: %d, addr=%p, %u, %u", errno, address, address_size, address_offset);
+#ifndef NDEBUG
   debug("afterForkParentAndChild remap %d: errno=%d, addr=%p, %u, %u", getpid(), errno, address, address_size,
         address_offset);
+#endif
 
   if (kAdviseDump) {
     madvise(address, address_size, MADV_DONTDUMP);
@@ -838,8 +840,9 @@ void MeshableArena::afterForkParentAndChild() {
     }
   }
 
+#ifndef NDEBUG
   debug("afterForkParentAndChild %d: resetSpanMapping %u clean spans", getpid(), count);
-
+#endif
   count = 0;
   for (size_t i = 0; i < kSpanClassCount; ++i) {
     for (auto &span : _dirty[i]) {
@@ -848,16 +851,18 @@ void MeshableArena::afterForkParentAndChild() {
     }
     ++count;
   }
+#ifndef NDEBUG
   debug("afterForkParentAndChild %d: resetSpanMapping %u dirty spans", getpid(), count);
-
+#endif
   count = 0;
   for (auto &span : _toReset) {
     trackCOWed(span);
     resetSpanMapping(span);
     ++count;
   }
-
+#ifndef NDEBUG
   debug("afterForkParentAndChild %d: resetSpanMapping %u _toReset spans", getpid(), count);
+#endif
 }
 
 void MeshableArena::afterForkParent() {
@@ -953,7 +958,10 @@ bool MeshableArena::moveMiniHeapToNewFile(MiniHeap *mh, void *ptr) {
 }
 
 void MeshableArena::moveRemainPages() {
+#ifndef NDEBUG
   debug("moveRemainPages checking : %u / %u, %u", _lastCOW, _COWend, _end);
+#endif
+
   auto check_begin = _lastCOW;
 
   size_t off;
@@ -995,7 +1003,9 @@ void MeshableArena::moveRemainPages() {
               slen = span.length;
               trackCOWed(span);
               resetSpanMapping(span);
+#ifndef NDEBUG
               debug("found in _clean len=%u", slen);
+#endif
             }
           }
         }
@@ -1007,7 +1017,9 @@ void MeshableArena::moveRemainPages() {
               slen = span.length;
               trackCOWed(span);
               resetSpanMapping(span);
+#ifndef NDEBUG
               debug("found in _dirty len=%u", slen);
+#endif
             }
           }
         }
@@ -1018,7 +1030,9 @@ void MeshableArena::moveRemainPages() {
             slen = span.length;
             trackCOWed(span);
             resetSpanMapping(span);
+#ifndef NDEBUG
             debug("found in _toReset len=%u", slen);
+#endif
           }
         }
         d_assert(found);
@@ -1033,7 +1047,7 @@ void MeshableArena::moveRemainPages() {
 
   if (off >= _COWend) {
 #ifndef NDEBUG
-    debug("moveRemainPages finished %u, %u, %u", off, _COWend, _end);
+    debug("moveRemainPages finished < %u, %u, %u", off, _COWend, _end);
     for (size_t j = 0; j < _COWend; ++j) {
       if (!_cowBitmap.isSet(j)) {
         tryAndSendToFree(new internal::FreeCmd(internal::FreeCmd::FLUSH));
@@ -1076,7 +1090,7 @@ void MeshableArena::moveRemainPages() {
         j += slen;
       }
     }
-    debug("moveRemainPages finished %u, %u, %u", off, _COWend, _end);
+    debug("moveRemainPages finished %u, %u, %u >", off, _COWend, _end);
 #endif
 
     _lastCOW = 0;
