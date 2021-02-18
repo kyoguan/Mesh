@@ -878,6 +878,7 @@ void MeshableArena::afterForkChild() {
   debug("afterForkChild pid=%u", getpid());
 
   runtime().setFreeThreadRunning(false);
+  _needCOWScan = false;
 
   close(_fd);
 

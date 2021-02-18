@@ -293,8 +293,6 @@ private:
 protected:
   inline void trackCOWed(const Span &span) {
     for (size_t i = 0; i < span.length; i++) {
-      // this may already be 1 if it was a meshed virtual span that is
-      // now being re-meshed to a new owning miniheap
       _cowBitmap.tryToSet(span.offset + i);
     }
   }
@@ -306,6 +304,7 @@ protected:
   CheapHeap<64, kArenaSize / kPageSize> _mhAllocator{};
   MWC _fastPrng;
   bool _isCOWRunning{false};
+  bool _needCOWScan{true};
 
 private:
   Offset _end{};  // in pages

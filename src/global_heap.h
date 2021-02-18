@@ -507,7 +507,7 @@ public:
 
     _lastMesh = now;
 
-    if (_isCOWRunning) {
+    if (_isCOWRunning && _needCOWScan) {
       processCOWPage();
       return;
     }
