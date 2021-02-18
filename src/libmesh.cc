@@ -266,7 +266,7 @@ size_t MESH_EXPORT fread(void *ptr, size_t size, size_t nmemb, FILE *stream) {
   return mesh::real::fread(ptr, size, nmemb, stream);
 }
 
-char *MESH_EXPORT getcwd(char *buf, size_t size) {
+char*  getcwd(char *buf, size_t size) {
   if (unlikely(mesh::real::getcwd == nullptr))
     mesh::real::init();
 
