@@ -581,7 +581,7 @@ int Runtime::sigprocmask(int how, const sigset_t *set, sigset_t *oldset) {
 void Runtime::segfaultHandler(int sig, siginfo_t *siginfo, void *context) {
   if (runtime().pid() != getpid()) {
     // we are just after fork, and glibc sucks.
-    // runtime().heap().doAfterForkChild();
+    runtime().heap().doAfterForkChild();
     return;
   }
 

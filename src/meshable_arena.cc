@@ -879,6 +879,10 @@ void MeshableArena::doAfterForkChild() {
 }
 
 void MeshableArena::afterForkChild() {
+  if (runtime().pid() == getpid()) {
+    return;
+  }
+
   runtime().updatePid();
   debug("afterForkChild pid=%u", getpid());
 
