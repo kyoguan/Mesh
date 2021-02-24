@@ -777,6 +777,10 @@ void MeshableArena::staticAfterForkChild() {
 }
 
 void MeshableArena::prepareForFork() {
+  if (!kMeshingEnabled) {
+    return;
+  }
+
   runtime().heap().lock();
   runtime().lock();
 
@@ -868,7 +872,9 @@ void MeshableArena::afterForkParentAndChild() {
 void MeshableArena::afterForkParent() {
   internal::Heap().unlock();
 
-  afterForkParentAndChild();
+  if (kMeshingEnabled) {
+    afterForkParentAndChild();
+  }
 
   runtime().unlock();
   runtime().heap().unlock();
@@ -888,6 +894,10 @@ void MeshableArena::afterForkChild() {
 
   runtime().setFreeThreadRunning(false);
   _needCOWScan = false;
+
+  if (!kMeshingEnabled) {
+    return;
+  }
 
   close(_fd);
 
