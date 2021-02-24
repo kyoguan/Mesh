@@ -3,6 +3,7 @@ Mesh: Compacting Memory Management for C/C++
 
 原版的Mesh可以访问[https://github.com/plasma-umass/Mesh]
 
+Latest release tag: v1.0.2 (beta, 2021-02-24).
 
 Release
 ------------------

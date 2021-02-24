@@ -1002,7 +1002,7 @@ void MeshableArena::moveRemainPages() {
       if (mh) {
         moveMiniHeapToNewFile(mh, nullptr);
         d_assert(_cowBitmap.isSet(off));
-        d_assert(off == mh->span().offset);
+        d_assert(off == mh->span().offset || off == mh->meshedLeader()->span().offset);
         off += mh->span().length;
       } else {
         tryAndSendToFree(new internal::FreeCmd(internal::FreeCmd::FLUSH));
