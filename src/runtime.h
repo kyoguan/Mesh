@@ -58,10 +58,6 @@ public:
     _heap.setMeshPeriodMs(period);
   }
 
-#if __linux__
-  int epollPwait(int __epfd, struct epoll_event *__events, int __maxevents, int __timeout, const __sigset_t *__ss);
-#endif
-
   ssize_t recv(int sockfd, void *buf, size_t len, int flags);
   ssize_t recvmsg(int sockfd, struct msghdr *msg, int flags);
 

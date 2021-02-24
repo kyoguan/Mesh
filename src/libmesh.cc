@@ -239,14 +239,6 @@ int MESH_EXPORT mesh_mallctl(const char *name, void *oldp, size_t *oldlenp, void
   return mesh::runtime().heap().mallctl(name, oldp, oldlenp, newp, newlen);
 }
 
-#if 0  //__linux__
-
-int MESH_EXPORT epoll_pwait(int __epfd, struct epoll_event *__events, int __maxevents, int __timeout,
-                            const __sigset_t *__ss) {
-  return mesh::runtime().epollPwait(__epfd, __events, __maxevents, __timeout, __ss);
-}
-#endif
-
 ssize_t MESH_EXPORT read(int fd, void *buf, size_t count) {
   if (unlikely(mesh::real::read == nullptr))
     mesh::real::init();

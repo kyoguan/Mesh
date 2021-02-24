@@ -494,16 +494,6 @@ void Runtime::unlock() {
   _mutex.unlock();
 }
 
-int Runtime::epollPwait(int __epfd, struct epoll_event *__events, int __maxevents, int __timeout,
-                        const __sigset_t *__ss) {
-  if (unlikely(mesh::real::epoll_pwait == nullptr))
-    mesh::real::init();
-
-  _heap.maybeMesh();
-
-  return mesh::real::epoll_pwait(__epfd, __events, __maxevents, __timeout, __ss);
-}
-
 static struct sigaction sigbusAction;
 static struct sigaction sigsegvAction;
 static mutex sigactionLock;
