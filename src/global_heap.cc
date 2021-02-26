@@ -317,6 +317,7 @@ size_t GlobalHeap::unboundMeshSlowly(MiniHeap *mh) {
 
 size_t GlobalHeap::meshSizeClassLocked(size_t sizeClass, MergeSetArray &mergeSets, SplitArray &left,
                                        SplitArray &right) {
+  // debug("mesh class = %d", sizeClass);
   size_t mergeSetCount = 0;
   // memset(reinterpret_cast<void *>(&mergeSets), 0, sizeof(mergeSets));
   // memset(&left, 0, sizeof(left));
@@ -436,19 +437,17 @@ void GlobalHeap::meshAllSizeClassesLocked() {
   // first, clear out any free memory we might have
   ++_lastMeshClass;
 
-  if(SizeMap::ByteSizeForClass(_lastMeshClass) < kPageSize) {
-    ++_lastMeshClass;
-  }
-
-  if(_lastMeshClass >= kNumBins) {
+  if (SizeMap::ByteSizeForClass(_lastMeshClass) >= kPageSize) {
     _lastMeshClass = 0;
   }
+
+  d_assert(_lastMeshClass < kNumBins);
 
   flushBinLocked(_lastMeshClass);
 
   size_t totalMeshCount = 0;
 
-  if(SizeMap::ByteSizeForClass(_lastMeshClass) < kPageSize) {
+  if (SizeMap::ByteSizeForClass(_lastMeshClass) < kPageSize) {
     totalMeshCount += meshSizeClassLocked(_lastMeshClass, MergeSets, Left, Right);
   }
 
