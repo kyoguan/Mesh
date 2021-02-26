@@ -3,11 +3,11 @@ Mesh: Compacting Memory Management for C/C++
 
 原版的Mesh可以访问[https://github.com/plasma-umass/Mesh]
 
-Latest release tag: v1.0.2 (beta, 2021-02-24).
+Latest release tag: v1.0.3 (2021-02-26).
 
 Release
 ------------------
-
+* 2021-02-26 `v1.0.3` mesh一次只对一个class, 减少了mesh消耗的cpu.
 * 2021-02-18 `v1.0.0` 新增实现了fork之后的COW。
 
 这里做了几点对比原作的改进
