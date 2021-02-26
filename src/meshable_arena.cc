@@ -784,7 +784,6 @@ void MeshableArena::prepareForFork() {
 
   runtime().heap().lock();
   runtime().lock();
-  internal::Heap().lock();
 
   // block here until the COW is finished.
   while (_isCOWRunning) {
