@@ -822,18 +822,12 @@ void MeshableArena::afterForkParentAndChild() {
   size_t address_offset = _end * kPageSize;
   _COWend = _end;
 
-<<<<<<< HEAD
   void *ptr = mmap(address, address_size, HL_MMAP_PROTECTION_MASK, kMapShared | MAP_FIXED, _fd, address_offset);
   hard_assert_msg(ptr == address, "map failed: %d, addr=%p, %u, %u", errno, address, address_size, address_offset);
 #ifndef NDEBUG
   debug("afterForkParentAndChild remap %d: errno=%d, addr=%p, %u, %u", getpid(), errno, address, address_size,
         address_offset);
 #endif
-=======
-  internal::Heap().unlock();
-
-  close(_forkPipe[1]);
->>>>>>> f66adeb9cfd00c463e055ce6b33b64625ed26f5b
 
   if (kAdviseDump) {
     madvise(address, address_size, MADV_DONTDUMP);
