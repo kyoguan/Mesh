@@ -339,7 +339,7 @@ size_t GlobalHeap::meshSizeClassLocked(size_t sizeClass, MergeSetArray &mergeSet
   method::shiftedSplitting(_fastPrng, &_partialFreelist[sizeClass].first, left, right, meshFound);
 
   if (mergeSetCount == 0) {
-    // debug("nothing to mesh.");
+    // debug("nothing to mesh. sizeClass = %d", sizeClass);
     return 0;
   }
 
@@ -434,14 +434,22 @@ void GlobalHeap::meshAllSizeClassesLocked() {
   // const auto start = time::now();
 
   // first, clear out any free memory we might have
-  for (size_t sizeClass = 0; sizeClass < kNumBins; sizeClass++) {
-    flushBinLocked(sizeClass);
+  ++_lastMeshClass;
+
+  if(SizeMap::ByteSizeForClass(_lastMeshClass) < kPageSize) {
+    ++_lastMeshClass;
   }
+
+  if(_lastMeshClass >= kNumBins) {
+    _lastMeshClass = 0;
+  }
+
+  flushBinLocked(_lastMeshClass);
 
   size_t totalMeshCount = 0;
 
-  for (size_t sizeClass = 0; sizeClass < kNumBins && SizeMap::ByteSizeForClass(sizeClass) < kPageSize; sizeClass++) {
-    totalMeshCount += meshSizeClassLocked(sizeClass, MergeSets, Left, Right);
+  if(SizeMap::ByteSizeForClass(_lastMeshClass) < kPageSize) {
+    totalMeshCount += meshSizeClassLocked(_lastMeshClass, MergeSets, Left, Right);
   }
 
   _lastMeshEffective = totalMeshCount > 256;

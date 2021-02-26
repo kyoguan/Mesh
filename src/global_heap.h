@@ -607,6 +607,7 @@ private:
 
   // XXX: should be atomic, but has exception spec?
   time::time_point _lastMesh;
+  size_t _lastMeshClass{0};
 };
 
 static_assert(kNumBins == 37, "if this changes, add more 'Head's above");
