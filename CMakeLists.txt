@@ -3,7 +3,8 @@ cmake_minimum_required(VERSION 3.13.0)
 project(Mesh CXX C)
 
 
-SET(CMAKE_BUILD_TYPE "" CACHE STRING "Just making sure the default CMAKE_BUILD_TYPE configurations won't interfere" FORCE)
+#SET(CMAKE_BUILD_TYPE "" CACHE STRING "Just making sure the default CMAKE_BUILD_TYPE configurations won't interfere" FORCE)
+SET(CMAKE_BUILD_TYPE "Release")
 
 #Set output folders
 set(CMAKE_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/build)
@@ -36,7 +37,7 @@ ExternalProject_Add(heap_layers
 )
 
 #Create configure options
-option(DEBUG "Build with debugging symbols" OFF) #replace with CMAKE_BUILD_TYPE?
+option(DEBUG "Build with debugging symbols" ON) #replace with CMAKE_BUILD_TYPE?
 option(OPTIMIZE " Build with optimizations" ON) #replace with CMAKE_BUILD_TYPE?
 option(GCOV "Build with gcov profiling support" OFF)
 option(CLANGCOV "Build with clangcov profiling support" OFF)
