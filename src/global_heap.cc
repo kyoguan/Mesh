@@ -447,8 +447,14 @@ void GlobalHeap::meshAllSizeClassesLocked() {
 
   size_t totalMeshCount = 0;
 
-  if (SizeMap::ByteSizeForClass(_lastMeshClass) < kPageSize) {
-    totalMeshCount += meshSizeClassLocked(_lastMeshClass, MergeSets, Left, Right);
+  while(SizeMap::ByteSizeForClass(_lastMeshClass) < kPageSize) {
+    auto meshCount = meshSizeClassLocked(_lastMeshClass, MergeSets, Left, Right);
+    if(meshCount > 0) {
+       totalMeshCount += meshCount;
+       break;
+    } else {
+      ++_lastMeshClass;
+    }
   }
 
   _lastMeshEffective = totalMeshCount > 256;
