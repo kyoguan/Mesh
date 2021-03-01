@@ -315,8 +315,7 @@ size_t GlobalHeap::unboundMeshSlowly(MiniHeap *mh) {
   return last;
 }
 
-size_t GlobalHeap::meshSizeClassLocked(size_t sizeClass, MergeSetArray &mergeSets, SplitArray &left,
-                                       SplitArray &right) {
+size_t GlobalHeap::meshSizeClassLocked(size_t sizeClass, MergeSetArray &mergeSets, SplitArray &all) {
   // debug("mesh class = %d", sizeClass);
   size_t mergeSetCount = 0;
   // memset(reinterpret_cast<void *>(&mergeSets), 0, sizeof(mergeSets));
@@ -337,7 +336,7 @@ size_t GlobalHeap::meshSizeClassLocked(size_t sizeClass, MergeSetArray &mergeSet
         return mergeSetCount < kMaxMergeSets;
       });
 
-  method::shiftedSplitting(_fastPrng, &_partialFreelist[sizeClass].first, left, right, meshFound);
+  method::shiftedSplitting(_fastPrng, &_partialFreelist[sizeClass].first, all, meshFound);
 
   if (mergeSetCount == 0) {
     // debug("nothing to mesh. sizeClass = %d", sizeClass);
@@ -411,12 +410,10 @@ void GlobalHeap::meshAllSizeClassesLocked() {
   static_assert(sizeof(MergeSets) == sizeof(void *) * 2 * 4096, "array too big");
   d_assert((reinterpret_cast<uintptr_t>(&MergeSets) & (kPageSize - 1)) == 0);
 
-  static SplitArray PAGE_ALIGNED Left;
-  static SplitArray PAGE_ALIGNED Right;
-  static_assert(sizeof(Left) == sizeof(void *) * 16384, "array too big");
-  static_assert(sizeof(Right) == sizeof(void *) * 16384, "array too big");
-  d_assert((reinterpret_cast<uintptr_t>(&Left) & (kPageSize - 1)) == 0);
-  d_assert((reinterpret_cast<uintptr_t>(&Right) & (kPageSize - 1)) == 0);
+  static SplitArray PAGE_ALIGNED All;
+  static_assert(sizeof(All) == sizeof(void *) * kMaxSplitListSize * 2, "array too big");
+
+  d_assert((reinterpret_cast<uintptr_t>(&All) & (kPageSize - 1)) == 0);
 
   // if we have freed but not reset meshed mappings, this will reset
   // them to the identity mapping, ensuring we don't blow past our VMA
@@ -447,11 +444,11 @@ void GlobalHeap::meshAllSizeClassesLocked() {
 
   size_t totalMeshCount = 0;
 
-  while(SizeMap::ByteSizeForClass(_lastMeshClass) < kPageSize) {
-    auto meshCount = meshSizeClassLocked(_lastMeshClass, MergeSets, Left, Right);
-    if(meshCount > 0) {
-       totalMeshCount += meshCount;
-       break;
+  while (SizeMap::ByteSizeForClass(_lastMeshClass) < kPageSize) {
+    auto meshCount = meshSizeClassLocked(_lastMeshClass, MergeSets, All);
+    if (meshCount > 0) {
+      totalMeshCount += meshCount;
+      break;
     } else {
       ++_lastMeshClass;
     }
@@ -564,12 +561,15 @@ void GlobalHeap::dumpList(int level) {
 
 namespace method {
 
-void ATTRIBUTE_NEVER_INLINE halfSplit(MWC &prng, MiniHeapListEntry *miniheaps, SplitArray &left, size_t &leftSize,
-                                      SplitArray &right, size_t &rightSize) noexcept {
+void ATTRIBUTE_NEVER_INLINE halfSplit(MWC &prng, MiniHeapListEntry *miniheaps, SplitArray &all, size_t &leftSize,
+                                      size_t &rightSize) noexcept {
   d_assert(leftSize == 0);
   d_assert(rightSize == 0);
+
+  size_t allSize = 0;
+
   MiniHeapID mhId = miniheaps->next();
-  while (mhId != list::Head && leftSize < kMaxSplitListSize && rightSize < kMaxSplitListSize) {
+  while (mhId != list::Head && allSize < kMaxSplitListSize * 2) {
     auto mh = GetMiniHeap(mhId);
     mhId = mh->getFreelist()->next();
 
@@ -578,21 +578,18 @@ void ATTRIBUTE_NEVER_INLINE halfSplit(MWC &prng, MiniHeapListEntry *miniheaps, S
       continue;
     }
 
-    if (leftSize <= rightSize) {
-      left[leftSize] = mh;
-      leftSize++;
-    } else {
-      right[rightSize] = mh;
-      rightSize++;
-    }
+    all[allSize] = mh;
+    ++allSize;
   }
 
-  internal::mwcShuffle(&left[0], &left[leftSize], prng);
-  internal::mwcShuffle(&right[0], &right[rightSize], prng);
+  internal::mwcShuffle(&all[0], &all[allSize], prng);
+
+  rightSize = allSize / 2;
+  leftSize = allSize - rightSize;
 }
 
 void ATTRIBUTE_NEVER_INLINE
-shiftedSplitting(MWC &prng, MiniHeapListEntry *miniheaps, SplitArray &left, SplitArray &right,
+shiftedSplitting(MWC &prng, MiniHeapListEntry *miniheaps, SplitArray &all,
                  const function<bool(std::pair<MiniHeap *, MiniHeap *> &&)> &meshFound) noexcept {
   constexpr size_t t = 64;
 
@@ -600,10 +597,19 @@ shiftedSplitting(MWC &prng, MiniHeapListEntry *miniheaps, SplitArray &left, Spli
     return;
   }
 
+  MiniHeap **left = nullptr;
+  MiniHeap **right = nullptr;
+
   size_t leftSize = 0;
   size_t rightSize = 0;
 
-  halfSplit(prng, miniheaps, left, leftSize, right, rightSize);
+  halfSplit(prng, miniheaps, all, leftSize, rightSize);
+
+  left = &all[0];
+  right = left + leftSize;
+
+  d_assert(left);
+  d_assert(right);
 
   if (leftSize == 0 || rightSize == 0) {
     return;
@@ -611,7 +617,7 @@ shiftedSplitting(MWC &prng, MiniHeapListEntry *miniheaps, SplitArray &left, Spli
 
   constexpr size_t nBytes = 32;
   const size_t limit = rightSize < t ? rightSize : t;
-  d_assert(nBytes == left[0]->bitmap().byteCount());
+  d_assert(nBytes == (*left)->bitmap().byteCount());
 
   size_t foundCount = 0;
   for (size_t j = 0; j < leftSize; j++) {
@@ -622,8 +628,8 @@ shiftedSplitting(MWC &prng, MiniHeapListEntry *miniheaps, SplitArray &left, Spli
       if (unlikely(idxRight >= rightSize)) {
         idxRight %= rightSize;
       }
-      auto h1 = left[idxLeft];
-      auto h2 = right[idxRight];
+      auto h1 = *(left + idxLeft);
+      auto h2 = *(right + idxRight);
 
       if (h1 == nullptr || h2 == nullptr)
         continue;
@@ -636,8 +642,8 @@ shiftedSplitting(MWC &prng, MiniHeapListEntry *miniheaps, SplitArray &left, Spli
       if (unlikely(areMeshable)) {
         std::pair<MiniHeap *, MiniHeap *> heaps{h1, h2};
         bool shouldContinue = meshFound(std::move(heaps));
-        left[idxLeft] = nullptr;
-        right[idxRight] = nullptr;
+        *(left + idxLeft) = nullptr;
+        *(right + idxRight) = nullptr;
         foundCount++;
         if (unlikely(foundCount > kMaxMeshesPerIteration || !shouldContinue)) {
           return;

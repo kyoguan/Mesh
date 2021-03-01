@@ -573,7 +573,7 @@ private:
   void meshAllSizeClassesLocked();
   size_t unboundMeshSlowly(MiniHeap *mh);
   // meshSizeClassLocked returns the number of merged sets found
-  size_t meshSizeClassLocked(size_t sizeClass, MergeSetArray &mergeSets, SplitArray &left, SplitArray &right);
+  size_t meshSizeClassLocked(size_t sizeClass, MergeSetArray &mergeSets, SplitArray &all);
 
   void processCOWPage();
 
