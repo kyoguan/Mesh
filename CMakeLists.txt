@@ -3,8 +3,8 @@ cmake_minimum_required(VERSION 3.13.0)
 project(Mesh CXX C)
 
 
-#SET(CMAKE_BUILD_TYPE "" CACHE STRING "Just making sure the default CMAKE_BUILD_TYPE configurations won't interfere" FORCE)
-SET(CMAKE_BUILD_TYPE "Release")
+SET(CMAKE_BUILD_TYPE "" CACHE STRING "Just making sure the default CMAKE_BUILD_TYPE configurations won't interfere" FORCE)
+#SET(CMAKE_BUILD_TYPE "Release")
 
 #Set output folders
 set(CMAKE_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/build)
