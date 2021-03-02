@@ -323,9 +323,9 @@ size_t GlobalHeap::meshSizeClassLocked(size_t sizeClass, MergeSetArray &mergeSet
   // memset(&right, 0, sizeof(right));
 
   // more change to reuse, other than meshed
-  if (_partialFreelist[sizeClass].second < _fullList[sizeClass].second / 15) {
-    return mergeSetCount;
-  }
+  // if (_partialFreelist[sizeClass].second < _fullList[sizeClass].second / 15) {
+  //   return mergeSetCount;
+  // }
 
   auto meshFound =
       function<bool(std::pair<MiniHeap *, MiniHeap *> &&)>([&](std::pair<MiniHeap *, MiniHeap *> &&miniheaps) {
