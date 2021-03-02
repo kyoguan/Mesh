@@ -280,8 +280,10 @@ void *Runtime::bgThread(void *arg) {
       // debug("<<<<<<<<<<\n");
     } else if (signo == SIGUSR1) {
       rt.heap().dumpList(0);
+      rt.heap().dumpStats(1, false);
     } else if (signo == SIGUSR2) {
       rt.heap().dumpList(1);
+      rt.heap().dumpStats(1, false);
     } else {
       auto _ __attribute__((unused)) =
           write(STDERR_FILENO, "Read unexpected signal\n", strlen("Read unexpected signal\n"));
