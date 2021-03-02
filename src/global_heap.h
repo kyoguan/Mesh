@@ -484,6 +484,11 @@ public:
       return;
     }
 
+    // if child , we don't mesh.
+    if (!_needCOWScan) {
+      return;
+    }
+
     const auto now = time::now();
     auto duration = chrono::duration_cast<chrono::milliseconds>(now - _lastMesh);
 
