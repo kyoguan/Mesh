@@ -479,7 +479,7 @@ void MeshableArena::getSpansFromBg(bool wait) {
       if (preCommand->cmd == internal::FreeCmd::FLUSH) {
         for (auto &s : preCommand->spans) {
 #ifndef NDEBUG
-          if (_isCOWRunning) {
+          if (_isCOWRunning && !wait) {
             for (auto i = s.offset; i < s.length; ++i) {
               d_assert(_cowBitmap.isSet(s.offset));
             }
