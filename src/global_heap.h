@@ -237,14 +237,14 @@ public:
   }
 
   template <uint32_t Size>
-  size_t fillFromList(FixedArray<MiniHeap, Size> &miniheaps, pid_t current,
-                      std::pair<MiniHeapListEntry, size_t> &freelist, size_t bytesFree) {
+  ssize_t fillFromList(FixedArray<MiniHeap, Size> &miniheaps, pid_t current,
+                       std::pair<MiniHeapListEntry, size_t> &freelist, ssize_t numToMove) {
     if (freelist.first.empty()) {
-      return bytesFree;
+      return numToMove;
     }
 
     auto nextId = freelist.first.next();
-    while (nextId != list::Head && bytesFree < kMiniheapRefillGoalSize && !miniheaps.full()) {
+    while (nextId != list::Head && numToMove > 0 && !miniheaps.full()) {
       auto mh = GetMiniHeap(nextId);
       d_assert(mh != nullptr);
       nextId = mh->getFreelist()->next();
@@ -260,6 +260,7 @@ public:
       // it turns out if you don't track bytes free and give more memory to the
       // thread-local cache, things perform better!
       // bytesFree += mh->bytesFree();
+      numToMove -= mh->maxCount() - mh->inUseCount();
       d_assert(!mh->isAttached());
       mh->setAttached(current, &freelist.first);
       d_assert(mh->isAttached() && mh->current() == current);
@@ -269,20 +270,20 @@ public:
       freelist.second--;
     }
 
-    return bytesFree;
+    return numToMove;
   }
 
   template <uint32_t Size>
-  size_t selectForReuse(int sizeClass, FixedArray<MiniHeap, Size> &miniheaps, pid_t current) {
-    size_t bytesFree = fillFromList(miniheaps, current, _partialFreelist[sizeClass], 0);
+  ssize_t selectForReuse(int sizeClass, FixedArray<MiniHeap, Size> &miniheaps, pid_t current, ssize_t numToMove) {
+    numToMove = fillFromList(miniheaps, current, _partialFreelist[sizeClass], numToMove);
 
-    if (bytesFree >= kMiniheapRefillGoalSize || miniheaps.full()) {
-      return bytesFree;
+    if (numToMove <= 0 || miniheaps.full()) {
+      return numToMove;
     }
 
     // we've exhausted all of our partially full MiniHeaps, but there
     // might still be empty ones we could reuse.
-    return fillFromList(miniheaps, current, _emptyFreelist[sizeClass], bytesFree);
+    return fillFromList(miniheaps, current, _emptyFreelist[sizeClass], numToMove);
   }
 
   template <uint32_t Size>
@@ -309,10 +310,14 @@ public:
     d_assert(sizeClass < kNumBins);
 
     d_assert(miniheaps.size() == 0);
+    ssize_t numToMove = kMiniheapRefillGoalSize / objectSize;
+    if (numToMove < 2) {
+      numToMove = 2;
+    }
 
     // check our bins for a miniheap to reuse
-    auto bytesFree = selectForReuse(sizeClass, miniheaps, current);
-    if (bytesFree >= kMiniheapRefillGoalSize || miniheaps.full()) {
+    numToMove = selectForReuse(sizeClass, miniheaps, current, numToMove);
+    if (numToMove <= 0 || miniheaps.full()) {
       return;
     }
 
@@ -323,13 +328,13 @@ public:
     const size_t pageCount = static_cast<size_t>(SizeMap::SizeClassToPageCount(sizeClass));
     const size_t objectCount = pageCount * kPageSize / objectSize;
 
-    while (bytesFree < kMiniheapRefillGoalSize && !miniheaps.full()) {
+    while (numToMove > 0 && !miniheaps.full()) {
       auto mh = allocMiniheapLocked(sizeClass, pageCount, objectCount, objectSize);
       d_assert(!mh->isAttached());
       mh->setAttached(current, nullptr);
       d_assert(mh->isAttached() && mh->current() == current);
       miniheaps.append(mh);
-      bytesFree += mh->bytesFree();
+      numToMove -= objectCount;
     }
 
     return;
